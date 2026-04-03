@@ -58,8 +58,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
-        return antPathMatcher.match("/auth/**", path)
-                || antPathMatcher.match("/actuator/health", path);
+        return true;
     }
 }
