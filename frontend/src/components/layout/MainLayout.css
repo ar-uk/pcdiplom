@@ -1,0 +1,98 @@
+/**
+ * MainLayout Component Styles
+ * Main application layout wrapper
+ */
+
+.main-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background-color: var(--bg-secondary);
+}
+
+.layout-container {
+  display: flex;
+  flex: 1;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  width: 100%;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+@media (max-width: 1024px) {
+  .layout-container {
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+}
+
+@media (max-width: 768px) {
+  .layout-container {
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2);
+  }
+}
+
+.main-content {
+  flex: 1;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-6);
+  min-height: calc(100vh - 200px);
+  overflow-x: hidden;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@media (max-width: 1024px) {
+  .main-content {
+    padding: var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding: var(--space-3);
+    min-height: auto;
+    border-radius: var(--radius-md);
+  }
+}
+
+.main-content:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+/* Responsive main content width */
+.main-content-wide {
+  max-width: 100%;
+}
+
+.main-content-sidebar {
+  width: calc(100% - 280px);
+}
+
+@media (max-width: 1024px) {
+  .main-content-sidebar {
+    width: 100%;
+  }
+}
+
+.footer {
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  margin-top: auto;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+@media (max-width: 768px) {
+  .footer {
+    padding: var(--space-2);
+  }
+}

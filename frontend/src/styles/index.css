@@ -1,0 +1,89 @@
+/**
+ * Global Styles Index
+ * Centralized import point for all global styles
+ */
+
+/* Global Styles */
+@import './reset.css';
+@import './variables.css';
+@import './typography.css';
+@import './utilities.css';
+@import './animations.css';
+
+/* Tailwind CSS Base */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Additional Global Styles
+ */
+
+/* Main Layout */
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Main Content */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Focus Visible for Accessibility */
+:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+
+/* Smooth Scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Selection Styles */
+::selection {
+  background-color: var(--primary);
+  color: white;
+}
+
+::-moz-selection {
+  background-color: var(--primary);
+  color: white;
+}
+
+/* Placeholder Styles */
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+::-moz-placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Print Styles */
+@media print {
+  body {
+    background: white;
+  }
+
+  .no-print,
+  .print-hidden {
+    display: none !important;
+  }
+}
+
+/* Performance: Use GPU acceleration for animations */
+.will-animate {
+  will-change: transform, opacity;
+}
+
+/* Prevent layout shift when scrollbar appears */
+html {
+  scrollbar-gutter: stable;
+}
