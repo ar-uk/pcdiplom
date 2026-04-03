@@ -12,9 +12,15 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+html,
+body,
+#root {
+  min-height: 0%;
+}
 body{
   margin: 0;
-  background-image: url(png/aksesori-pc-gaming1.png);
+  background-color: #07161c;
+  background-image: url(../png/aksesori-pc-gaming1.png);
   background-size: cover;
   background-repeat: no-repeat;
  
@@ -59,7 +65,7 @@ header{
 .profile:hover{
   transform: scale(1.1);
 }
-content .textcontent{
+.content .textcontent{
   padding-left: 181px;
   padding-right: 453px;
 }
@@ -99,6 +105,7 @@ content .textcontent{
 }
 .AI button span{
   background:linear-gradient( #FAD46A, #5BB0CF);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
