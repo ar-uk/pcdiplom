@@ -1,0 +1,87 @@
+package org.example.recommendationservice.model;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDateTime;
+
+@Getter
+@Setter
+@Entity
+@Table(name = "ai_saved_build")
+public class AiSavedBuild {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "session_id", nullable = false, unique = true)
+    private String sessionId;
+
+    @Column(name = "user_id")
+    private String userId;
+
+    @Lob
+    @Column(name = "prompt", nullable = false)
+    private String prompt;
+
+    @Column(name = "currency")
+    private String currency;
+
+    @Column(name = "region")
+    private String region;
+
+    @Column(name = "strict_budget", nullable = false)
+    private boolean strictBudget;
+
+    @Lob
+    @Column(name = "intent_json", nullable = false)
+    private String intentJson;
+
+    @Lob
+    @Column(name = "build_json", nullable = false)
+    private String buildJson;
+
+    @Lob
+    @Column(name = "totals_json", nullable = false)
+    private String totalsJson;
+
+    @Lob
+    @Column(name = "checks_json", nullable = false)
+    private String checksJson;
+
+    @Lob
+    @Column(name = "reasoning_json", nullable = false)
+    private String reasoningJson;
+
+    @Lob
+    @Column(name = "alternatives_json", nullable = false)
+    private String alternativesJson;
+
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+}
