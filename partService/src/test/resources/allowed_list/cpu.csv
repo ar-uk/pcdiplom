@@ -1,0 +1,35 @@
+part_name,brand,category,platform_spec,spec_detail,performance_tier,release_gen
+Ryzen 5 2600,AMD,CPU,AM4 DDR4,6C/12T,low,zen+
+Ryzen 5 3500X,AMD,CPU,AM4 DDR4,6C/6T,low,zen2
+Ryzen 5 3600,AMD,CPU,AM4 DDR4,6C/12T,low_to_mid,zen2
+Ryzen 7 3700X,AMD,CPU,AM4 DDR4,8C/16T,mid,zen2
+Ryzen 7 3800X,AMD,CPU,AM4 DDR4,8C/16T,mid_to_high,zen2
+Ryzen 5 4500,AMD,CPU,AM4 DDR4,6C/12T,low,zen2_refresh
+Ryzen 5 5500,AMD,CPU,AM4 DDR4,6C/12T,low,zen3_cutdown
+Ryzen 5 5600,AMD,CPU,AM4 DDR4,6C/12T,low_to_mid,zen3
+Ryzen 5 5600X,AMD,CPU,AM4 DDR4,6C/12T,mid,zen3
+Ryzen 7 5700X,AMD,CPU,AM4 DDR4,8C/16T,mid,zen3
+Ryzen 7 5800X,AMD,CPU,AM4 DDR4,8C/16T,mid_to_high,zen3
+Ryzen 7 5800X3D,AMD,CPU,AM4 DDR4,8C/16T 3D Cache,high,zen3
+Ryzen 5 7500F,AMD,CPU,AM5 DDR5,6C/12T,low_to_mid,zen4
+Ryzen 5 7600,AMD,CPU,AM5 DDR5,6C/12T,mid,zen4
+Ryzen 7 7700,AMD,CPU,AM5 DDR5,8C/16T,mid_to_high,zen4
+Ryzen 7 7800X3D,AMD,CPU,AM5 DDR5,8C/16T 3D Cache,high,zen4
+Core i3-10100F,Intel,CPU,LGA1200 DDR4,4C/8T,low,10th_gen
+Core i5-10400F,Intel,CPU,LGA1200 DDR4,6C/12T,low_to_mid,10th_gen
+Core i7-10700F,Intel,CPU,LGA1200 DDR4,8C/16T,mid,10th_gen
+Core i3-12100F,Intel,CPU,LGA1700 DDR4/DDR5,4C/8T,low,12th_gen
+Core i5-12400F,Intel,CPU,LGA1700 DDR4/DDR5,6C/12T,low_to_mid,12th_gen
+Core i5-12600K,Intel,CPU,LGA1700 DDR5,10C hybrid,mid,12th_gen
+Core i7-12700K,Intel,CPU,LGA1700 DDR5,12C hybrid,mid_to_high,12th_gen
+Core i5-13400F,Intel,CPU,LGA1700 DDR4/DDR5,10C hybrid,mid,13th_gen
+Core i5-13600K,Intel,CPU,LGA1700 DDR5,14C hybrid,mid_to_high,13th_gen
+Core i7-13700K,Intel,CPU,LGA1700 DDR5,16C hybrid,high,13th_gen
+Core i9-13900K,Intel,CPU,LGA1700 DDR5,24C hybrid,enthusiast,13th_gen
+Core i5-14400F,Intel,CPU,LGA1700 DDR4/DDR5,10C hybrid,mid,14th_gen
+Core i5-14600K,Intel,CPU,LGA1700 DDR5,14C hybrid,mid_to_high,14th_gen
+Core i7-14700K,Intel,CPU,LGA1700 DDR5,20C hybrid,high,14th_gen
+Core i9-14900K,Intel,CPU,LGA1700 DDR5,24C hybrid,enthusiast,14th_gen
+Core Ultra 5 245K,Intel,CPU,LGA1851 DDR5,14C hybrid,mid,core_ultra
+Core Ultra 7 265K,Intel,CPU,LGA1851 DDR5,20C hybrid,mid_to_high,core_ultra
+Core Ultra 9 285K,Intel,CPU,LGA1851 DDR5,24C hybrid,high,core_ultra
