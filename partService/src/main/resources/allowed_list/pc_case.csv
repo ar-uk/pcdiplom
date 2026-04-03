@@ -1,0 +1,15 @@
+name,price_usd,case_type,color,psu,side_panel,external_volume,internal_35_bays
+ATX Mid Tower Black ATX PSU TemperedGlass,90,Mid Tower,Black,ATX PSU,Tempered Glass,45,2
+ATX Mid Tower White ATX PSU TemperedGlass,95,Mid Tower,White,ATX PSU,Tempered Glass,45,2
+ATX Mid Tower Black ATX PSU Mesh,80,Mid Tower,Black,ATX PSU,Mesh,42,2
+ATX Mid Tower White ATX PSU Mesh,85,Mid Tower,White,ATX PSU,Mesh,42,2
+mATX Mini Tower Black ATX PSU TemperedGlass,70,Mini Tower,Black,ATX PSU,Tempered Glass,30,2
+mATX Mini Tower White ATX PSU TemperedGlass,75,Mini Tower,White,ATX PSU,Tempered Glass,30,2
+mATX Mini Tower Black ATX PSU Mesh,60,Mini Tower,Black,ATX PSU,Mesh,28,2
+mATX Mini Tower White ATX PSU Mesh,65,Mini Tower,White,ATX PSU,Mesh,28,2
+ATX Full Tower Black ATX PSU TemperedGlass,150,Full Tower,Black,ATX PSU,Tempered Glass,70,4
+ATX Full Tower White ATX PSU TemperedGlass,160,Full Tower,White,ATX PSU,Tempered Glass,70,4
+ATX Mid Tower Black ATX PSU DualChamber Glass,130,Mid Tower,Black,ATX PSU,Tempered Glass,55,2
+ATX Mid Tower White ATX PSU DualChamber Glass,135,Mid Tower,White,ATX PSU,Tempered Glass,55,2
+ITX Mini Tower Black SFX PSU TemperedGlass,100,Mini ITX,Black,SFX PSU,Tempered Glass,20,1
+ITX Mini Tower White SFX PSU TemperedGlass,105,Mini ITX,White,SFX PSU,Tempered Glass,20,1
