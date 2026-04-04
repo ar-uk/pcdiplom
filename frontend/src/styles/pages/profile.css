@@ -210,6 +210,23 @@
   background: rgba(27, 61, 75, 0.9);
 }
 
+.profile-page .new-build-btn {
+  margin-left: 10px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: linear-gradient(135deg, #5ee7ff 0%, #7d68ff 100%);
+  color: #041015;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.profile-page .new-build-btn:hover {
+  filter: brightness(1.06);
+}
+
 .profile-page .build-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -230,25 +247,69 @@
   min-height: 210px;
 }
 
-.profile-page .build-image {
+.profile-page .build-image-wrap {
   width: 100%;
   max-width: 190px;
   height: 155px;
+  position: relative;
+  margin-top: 6px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.profile-page .build-image {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   border-radius: 10px;
-  margin-top: 6px;
 }
 
 .profile-page .build-title {
-  margin-top: 8px;
   font-size: 14px;
-  text-align: center;
+  text-align: left;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+
+.profile-page .build-image-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: linear-gradient(180deg, rgba(7, 22, 28, 0) 0%, rgba(7, 22, 28, 0.9) 100%);
+}
+
+.profile-page .build-price {
+  font-size: 12px;
+  font-weight: 900;
+  color: #9ef0ff;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
 }
 
 .profile-page .build-subtitle {
   font-size: 13px;
   text-align: center;
   color: #e8eef2;
+}
+
+.profile-page .build-edit-btn {
+  margin-top: 10px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: rgba(94, 231, 255, 0.18);
+  color: #dff8ff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.profile-page .build-edit-btn:hover {
+  background: rgba(94, 231, 255, 0.32);
 }
 
 .profile-page .pagination {

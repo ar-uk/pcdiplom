@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,20 +49,26 @@ public class ShopProduct {
 
         try {
             Set<String> seenUrls = new LinkedHashSet<>();
-            searchProductsFromApi(query, products, seenUrls);
+            List<String> queries = buildSearchQueries(query, partType);
+
+            for (String searchQuery : queries) {
+                searchProductsFromApi(searchQuery, products, seenUrls);
+            }
 
             // Keep a fallback HTML parser for cases where API shape changes.
             if (products.isEmpty()) {
-                String searchUrl = buildSearchUrl(query, partType);
-                Document doc = fetchDocument(searchUrl, query);
-                if (doc != null) {
-                    parseProductsFromDocument(doc, products, seenUrls);
-                }
+                for (String searchQuery : queries) {
+                    String searchUrl = buildSearchUrl(searchQuery, partType);
+                    Document doc = fetchDocument(searchUrl, searchQuery);
+                    if (doc != null) {
+                        parseProductsFromDocument(doc, products, seenUrls);
+                    }
 
-                String fallbackUrl = BASE_URL + "/search/?q=" + encodeQuery(query);
-                Document fallbackDoc = fetchDocument(fallbackUrl, query);
-                if (fallbackDoc != null) {
-                    parseProductsFromDocument(fallbackDoc, products, seenUrls);
+                    String fallbackUrl = BASE_URL + "/search/?q=" + encodeQuery(searchQuery);
+                    Document fallbackDoc = fetchDocument(fallbackUrl, searchQuery);
+                    if (fallbackDoc != null) {
+                        parseProductsFromDocument(fallbackDoc, products, seenUrls);
+                    }
                 }
             }
 
@@ -71,6 +78,34 @@ public class ShopProduct {
         }
 
         return products;
+    }
+
+    private static List<String> buildSearchQueries(String query, String partType) {
+        List<String> queries = new ArrayList<>();
+        String baseQuery = (query == null ? "" : query.trim());
+
+        if (baseQuery.isEmpty()) {
+            return queries;
+        }
+
+        queries.add(baseQuery);
+
+        String normalizedType = partType == null ? "" : partType.trim().toLowerCase(Locale.ROOT);
+        if (normalizedType.equals("cpu_cooler") || normalizedType.equals("cooling") || normalizedType.equals("cooler")) {
+            queries.add(baseQuery + " кулер");
+            queries.add(baseQuery + " система водяного охлаждения");
+        }
+
+        List<String> deduped = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String item : queries) {
+            String normalized = item.trim().toLowerCase(Locale.ROOT);
+            if (!normalized.isEmpty() && seen.add(normalized)) {
+                deduped.add(item.trim());
+            }
+        }
+
+        return deduped;
     }
 
     private static void searchProductsFromApi(String query, List<ShopProduct> products, Set<String> seenUrls) {

@@ -2,6 +2,7 @@ package org.example.partservice.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.example.partservice.model.ParsedCpu;
+import org.example.partservice.model.ParsedCpuCooler;
 import org.example.partservice.model.ParsedInternalHardDrive;
 import org.example.partservice.model.ParsedMemory;
 import org.example.partservice.model.ParsedMotherboard;
@@ -9,6 +10,7 @@ import org.example.partservice.model.ParsedPcCase;
 import org.example.partservice.model.ParsedPowerSupply;
 import org.example.partservice.model.ParsedVideoCard;
 import org.example.partservice.repository.ParsedCpuRepository;
+import org.example.partservice.repository.ParsedCpuCoolerRepository;
 import org.example.partservice.repository.ParsedInternalHardDriveRepository;
 import org.example.partservice.repository.ParsedMemoryRepository;
 import org.example.partservice.repository.ParsedMotherboardRepository;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ParsedCatalogController {
 
     private final ParsedCpuRepository parsedCpuRepository;
+    private final ParsedCpuCoolerRepository parsedCpuCoolerRepository;
     private final ParsedVideoCardRepository parsedVideoCardRepository;
     private final ParsedPowerSupplyRepository parsedPowerSupplyRepository;
     private final ParsedPcCaseRepository parsedPcCaseRepository;
@@ -42,6 +45,14 @@ public class ParsedCatalogController {
             @RequestParam(defaultValue = "200") int size
     ) {
         return parsedCpuRepository.findAll(PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "priceKzt")));
+    }
+
+    @GetMapping({"/cpu-cooler", "/cooling"})
+    public Page<ParsedCpuCooler> cpuCooler(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "200") int size
+    ) {
+        return parsedCpuCoolerRepository.findAll(PageRequest.of(page, size, Sort.by(Sort.Direction.ASC, "priceKzt")));
     }
 
     @GetMapping("/video-card")

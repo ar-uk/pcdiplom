@@ -11,6 +11,8 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -43,28 +45,28 @@ public class AiSavedBuild {
     @Column(name = "strict_budget", nullable = false)
     private boolean strictBudget;
 
-    @Lob
-    @Column(name = "intent_json", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "intent_json", nullable = false, columnDefinition = "jsonb")
     private String intentJson;
 
-    @Lob
-    @Column(name = "build_json", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "build_json", nullable = false, columnDefinition = "jsonb")
     private String buildJson;
 
-    @Lob
-    @Column(name = "totals_json", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "totals_json", nullable = false, columnDefinition = "jsonb")
     private String totalsJson;
 
-    @Lob
-    @Column(name = "checks_json", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "checks_json", nullable = false, columnDefinition = "jsonb")
     private String checksJson;
 
-    @Lob
-    @Column(name = "reasoning_json", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "reasoning_json", nullable = false, columnDefinition = "jsonb")
     private String reasoningJson;
 
-    @Lob
-    @Column(name = "alternatives_json", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "alternatives_json", nullable = false, columnDefinition = "jsonb")
     private String alternativesJson;
 
     @Column(name = "created_at", nullable = false)

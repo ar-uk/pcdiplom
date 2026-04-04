@@ -8,18 +8,17 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-import java.time.LocalDateTime;
-
 @Getter
 @Setter
 @Entity
-@Table(name = "user_build")
-public class UserBuild {
+@Table(name = "manual_build_draft")
+public class ManualBuildDraft {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -31,18 +30,19 @@ public class UserBuild {
     @Column(name = "title")
     private String title;
 
-    @Column(name = "description")
-    private String description;
-
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "build_json", nullable = false, columnDefinition = "jsonb")
     private String buildJson;
 
-    @Column(name = "is_public", nullable = false)
-    private boolean publicBuild;
+    @Column(name = "estimated_power", nullable = false)
+    private Integer estimatedPower;
 
-    @Column(name = "source_session_id")
-    private String sourceSessionId;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "compatibility_issues_json", nullable = false, columnDefinition = "jsonb")
+    private String compatibilityIssuesJson;
+
+    @Column(name = "is_finalized", nullable = false)
+    private boolean finalized;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
