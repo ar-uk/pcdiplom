@@ -5,13 +5,18 @@ import { clearSession, loadSession, saveSession } from "./lib/session.js";
 import "./styles/pages/profile.css";
 import profiledflt from "./assets/profiledflt.jpg";
 const PLACEHOLDERS = [
-  "https://placehold.co/320x220/72c7ff/0b1b24?text=PC+Build+1",
-  "https://placehold.co/320x220/7a5cff/0b1b24?text=PC+Build+2",
-  "https://placehold.co/320x220/b06cff/0b1b24?text=PC+Build+3",
-  "https://placehold.co/320x220/72c7ff/0b1b24?text=PC+Build+4",
-  "https://placehold.co/320x220/7a5cff/0b1b24?text=PC+Build+5",
-  "https://placehold.co/320x220/b06cff/0b1b24?text=PC+Build+6",
+  "https://placehold.co/320x220/72c7ff/0b1b24",
+  "https://placehold.co/320x220/7a5cff/0b1b24",
+  "https://placehold.co/320x220/b06cff/0b1b24",
+  "https://placehold.co/320x220/72c7ff/0b1b24",
+  "https://placehold.co/320x220/7a5cff/0b1b24",
+  "https://placehold.co/320x220/b06cff/0b1b24",
 ];
+
+function formatKzt(value) {
+  const amount = Number(value ?? 0);
+  return `${amount.toLocaleString("en-US")} KZT`;
+}
 
 export default function ProfilePage() {
   const navigate = useNavigate();
@@ -21,23 +26,60 @@ export default function ProfilePage() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [builds] = useState([
-    { id: 1, name: "RTX 4060 Build", cpu: "Intel i5 12400F" },
-    { id: 2, name: "Gaming Beast", cpu: "Ryzen 7 5800X" },
-    { id: 3, name: "Budget Setup", cpu: "Ryzen 5 3600" },
-    { id: 4, name: "Streaming Rig", cpu: "Intel i7 12700K" },
-    { id: 5, name: "Mini ITX Build", cpu: "Ryzen 5 5600X" },
-    { id: 6, name: "Workstation", cpu: "Intel i9 12900K" },
-    { id: 7, name: "RGB Monster", cpu: "Ryzen 9 5900X" },
-    { id: 8, name: "Silent Build1231", cpu: "Intel i5 13400" },
-    { id: 9, name: "Silent Build123", cpu: "Intel i5 13400" },
-    { id: 10, name: "Silent Buildfsdf", cpu: "Intel i5 13400" },
-    { id: 11, name: "Silent Builddsf", cpu: "Intel i5 13400" },
-    { id: 12, name: "Silent Buildasdasd", cpu: "Intel i5 13400" },
-  ]);
+  const [builds, setBuilds] = useState([]);
+  const [buildsLoading, setBuildsLoading] = useState(false);
+  const [buildsError, setBuildsError] = useState("");
+
   useEffect(() => {
     setSession(loadSession());
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadUserBuilds() {
+      if (!session?.email) {
+        if (!alive) return;
+        setBuilds([]);
+        setBuildsError("");
+        setBuildsLoading(false);
+        return;
+      }
+
+      setBuildsLoading(true);
+      setBuildsError("");
+
+      try {
+        const response = await fetch(`/api/recommendation/manual-builds?userId=${encodeURIComponent(session.email)}`, {
+          headers: session?.token
+            ? {
+              Authorization: `Bearer ${session.token}`,
+            }
+            : undefined,
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `Failed to load builds (${response.status})`);
+        }
+
+        const rows = await response.json();
+        if (!alive) return;
+        setBuilds(Array.isArray(rows) ? rows : []);
+      } catch (loadError) {
+        if (!alive) return;
+        setBuilds([]);
+        setBuildsError(loadError.message || "Failed to load your builds.");
+      } finally {
+        if (alive) setBuildsLoading(false);
+      }
+    }
+
+    loadUserBuilds();
+    return () => {
+      alive = false;
+    };
+  }, [session?.email, session?.token]);
 
   const handleLogout = async () => {
     setBusy(true);
@@ -223,20 +265,58 @@ export default function ProfilePage() {
             <span>WishList</span>
             <span>BlackList</span>
             <div className="search-bar" />
+            <button
+              type="button"
+              className="new-build-btn"
+              onClick={() => navigate("/build")}
+            >
+              New Build
+            </button>
           </div>
 
           <div className="build-grid">
+            {buildsLoading ? <div className="build-subtitle">Loading your builds...</div> : null}
+            {!buildsLoading && buildsError ? <div className="build-subtitle">{buildsError}</div> : null}
+            {!buildsLoading && !buildsError && builds.length === 0 ? (
+              <div className="build-subtitle">No saved builds yet. Create one in Builder and save it.</div>
+            ) : null}
             {builds.map((b, index) => (
               <div className="build-card" key={b.id ?? index}>
-                <img
-                  className="build-image"
-                  src={PLACEHOLDERS[index % PLACEHOLDERS.length]}
-                  alt="PC build"
-                />
-                <div className="build-title">{b.name ?? "RTX 4060"}</div>
-                <div className="build-subtitle">
-                  {b.cpu ?? "Intel Core i7 12500K"}
+                <div className="build-image-wrap">
+                  <img
+                    className="build-image"
+                    src={PLACEHOLDERS[index % PLACEHOLDERS.length]}
+                    alt="PC build"
+                  />
+                  <div className="build-image-overlay">
+                    <div className="build-title">{b.title ?? `Build #${b.id}`}</div>
+                    <div className="build-price">{formatKzt(b.totalPrice)}</div>
+                  </div>
                 </div>
+                <div className="build-subtitle">
+                  {b.updatedAt
+                    ? `Updated ${new Date(b.updatedAt).toLocaleString()}`
+                    : b.createdAt
+                    ? `Created ${new Date(b.createdAt).toLocaleString()}`
+                    : `Build ID ${b.id ?? "-"}`}
+                </div>
+                <button
+                  type="button"
+                  className="build-edit-btn"
+                  onClick={() =>
+                    navigate("/build", {
+                      state: {
+                        editBuild: {
+                          id: b.id,
+                          title: b.title,
+                          selectedParts: b.selectedParts ?? {},
+                        },
+                      },
+                    })
+                  }
+                >
+                  Edit build
+                </button>
               </div>
             ))}
           </div>

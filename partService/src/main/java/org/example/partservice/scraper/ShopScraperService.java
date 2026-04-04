@@ -2,6 +2,7 @@ package org.example.partservice.scraper;
 
 import lombok.AllArgsConstructor;
 import org.example.partservice.model.ParsedCpu;
+import org.example.partservice.model.ParsedCpuCooler;
 import org.example.partservice.model.ParsedInternalHardDrive;
 import org.example.partservice.model.ParsedMemory;
 import org.example.partservice.model.ParsedMotherboard;
@@ -9,6 +10,7 @@ import org.example.partservice.model.ParsedPcCase;
 import org.example.partservice.model.ParsedPowerSupply;
 import org.example.partservice.model.ParsedVideoCard;
 import org.example.partservice.repository.ParsedCpuRepository;
+import org.example.partservice.repository.ParsedCpuCoolerRepository;
 import org.example.partservice.repository.ParsedInternalHardDriveRepository;
 import org.example.partservice.repository.ParsedMemoryRepository;
 import org.example.partservice.repository.ParsedMotherboardRepository;
@@ -26,6 +28,7 @@ import java.util.Locale;
 @AllArgsConstructor
 public class ShopScraperService {
     private ParsedCpuRepository parsedCpuRepository;
+    private ParsedCpuCoolerRepository parsedCpuCoolerRepository;
     private ParsedVideoCardRepository parsedVideoCardRepository;
     private ParsedPowerSupplyRepository parsedPowerSupplyRepository;
     private ParsedPcCaseRepository parsedPcCaseRepository;
@@ -89,6 +92,17 @@ public class ShopScraperService {
                 cpu.setUrl(url);
                 cpu.setLastScraped(now);
                 parsedCpuRepository.save(cpu);
+                return true;
+            }
+            case "cpu_cooler" -> {
+                ParsedCpuCooler cooler = parsedCpuCoolerRepository.findFirstByUrl(url).orElseGet(ParsedCpuCooler::new);
+                cooler.setName(productName);
+                cooler.setPriceKzt(priceKzt);
+                cooler.setRetailer("shop.kz");
+                cooler.setCurrency("KZT");
+                cooler.setUrl(url);
+                cooler.setLastScraped(now);
+                parsedCpuCoolerRepository.save(cooler);
                 return true;
             }
             case "gpu" -> {
@@ -168,6 +182,15 @@ public class ShopScraperService {
         if (partType == null || partType.isBlank()) {
             return "unknown";
         }
-        return partType.trim().toLowerCase(Locale.ROOT);
+
+        String normalized = partType.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "psu", "power-supply", "power supply" -> "power_supply";
+            case "ram" -> "memory";
+            case "storage", "internal-hard-drive", "internal_hard_drive" -> "internal_memory";
+            case "case", "pc-case", "pc case" -> "pc_case";
+            case "cooling", "cooler", "cpu-cooler", "cpu cooler" -> "cpu_cooler";
+            default -> normalized;
+        };
     }
 }

@@ -4,7 +4,9 @@ import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.AbstractMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Locale;
 
 public class AllowlistLoader {
     /**
@@ -17,10 +19,13 @@ public class AllowlistLoader {
             List<Map.Entry<String, String>> csvByType = List.of(
                 new AbstractMap.SimpleEntry<>("gpu", "allowed_list/gpu.csv"),
                 new AbstractMap.SimpleEntry<>("cpu", "allowed_list/cpu.csv"),
+                new AbstractMap.SimpleEntry<>("cpu_cooler", "allowed_list/cpu_cooler.csv"),
+                new AbstractMap.SimpleEntry<>("cpu_cooler", "allowed_list/cooler.csv"),
                 new AbstractMap.SimpleEntry<>("memory", "allowed_list/memory.csv"),
                 new AbstractMap.SimpleEntry<>("internal_memory", "allowed_list/internal_hard_drive.csv"),
                 new AbstractMap.SimpleEntry<>("motherboard", "allowed_list/motherboard.csv"),
                 new AbstractMap.SimpleEntry<>("power_supply", "allowed_list/power_supply.csv"),
+                new AbstractMap.SimpleEntry<>("power_supply", "allowed_list/psu.csv"),
                 new AbstractMap.SimpleEntry<>("pc_case", "allowed_list/pc_case.csv")
             );
 
@@ -35,6 +40,7 @@ public class AllowlistLoader {
                 }
             }
 
+            parts = dedupeParts(parts);
             System.out.println("Successfully loaded " + parts.size() + " parts from allowlist");
         } catch (Exception e) {
             System.err.println("Error loading allowlist: " + e.getMessage());
@@ -124,5 +130,22 @@ public class AllowlistLoader {
 
     private static String[] splitCsvLine(String line) {
         return line.split(",");
+    }
+
+    private static List<AllowlistPart> dedupeParts(List<AllowlistPart> source) {
+        Map<String, AllowlistPart> deduped = new LinkedHashMap<>();
+
+        for (AllowlistPart item : source) {
+            if (item == null || item.getPartName() == null || item.getPartType() == null) {
+                continue;
+            }
+
+            String key = item.getPartType().trim().toLowerCase(Locale.ROOT) + "::"
+                + item.getPartName().trim().toLowerCase(Locale.ROOT);
+
+            deduped.putIfAbsent(key, item);
+        }
+
+        return new java.util.ArrayList<>(deduped.values());
     }
 }

@@ -1,0 +1,15 @@
+name,price_usd,psu_type,efficiency,wattage,modular,color
+ATX 500W Bronze Non-Modular Black,50,ATX,Bronze,500,Non-Modular,Black
+ATX 600W Bronze Non-Modular Black,60,ATX,Bronze,600,Non-Modular,Black
+ATX 650W Bronze Semi-Modular Black,70,ATX,Bronze,650,Semi-Modular,Black
+ATX 700W Bronze Semi-Modular Black,80,ATX,Bronze,700,Semi-Modular,Black
+ATX 750W Gold Semi-Modular Black,100,ATX,Gold,750,Semi-Modular,Black
+ATX 750W Gold Fully Modular Black,110,ATX,Gold,750,Fully Modular,Black
+ATX 850W Gold Fully Modular Black,130,ATX,Gold,850,Fully Modular,Black
+ATX 850W Gold Fully Modular White,135,ATX,Gold,850,Fully Modular,White
+ATX 1000W Gold Fully Modular Black,160,ATX,Gold,1000,Fully Modular,Black
+ATX 1000W Platinum Fully Modular Black,200,ATX,Platinum,1000,Fully Modular,Black
+ATX 1200W Gold Fully Modular Black,220,ATX,Gold,1200,Fully Modular,Black
+ATX 1200W Platinum Fully Modular Black,260,ATX,Platinum,1200,Fully Modular,Black
+SFX 600W Gold Fully Modular Black,120,SFX,Gold,600,Fully Modular,Black
+SFX 750W Gold Fully Modular Black,140,SFX,Gold,750,Fully Modular,Black

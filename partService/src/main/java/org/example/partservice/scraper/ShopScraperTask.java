@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
 import java.util.List;
 
 @Component
@@ -28,9 +29,9 @@ public class ShopScraperTask {
             }
 
             if (onlyPartType != null && !onlyPartType.isBlank()) {
-                String normalizedType = onlyPartType.trim().toLowerCase();
+                String normalizedType = canonicalPartType(onlyPartType);
                 allowlist = allowlist.stream()
-                    .filter(p -> normalizedType.equalsIgnoreCase(p.getPartType()))
+                    .filter(p -> normalizedType.equals(canonicalPartType(p.getPartType())))
                     .toList();
             }
 
@@ -61,5 +62,21 @@ public class ShopScraperTask {
 
     public void scrapeAllowlistFromShop() {
         scrapeAllowlistFromShop(null, null);
+    }
+
+    private String canonicalPartType(String partType) {
+        if (partType == null || partType.isBlank()) {
+            return "";
+        }
+
+        String normalized = partType.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "psu", "power-supply", "power supply" -> "power_supply";
+            case "ram" -> "memory";
+            case "storage", "internal-hard-drive", "internal_hard_drive" -> "internal_memory";
+            case "case", "pc-case", "pc case" -> "pc_case";
+            case "cooling", "cooler", "cpu-cooler", "cpu cooler" -> "cpu_cooler";
+            default -> normalized;
+        };
     }
 }
