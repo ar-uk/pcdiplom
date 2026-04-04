@@ -6,21 +6,23 @@ import java.util.Map;
 
 public record BuildResponse(
         String sessionId,
-        IntentDto intent,
-        Map<String, PartDto> build,
-        Map<String, List<PartOptionDto>> options,
-        TotalsDto totals,
+        RequirementsDto requirements,
+        String budgetBand,
+        List<BuildVariantDto> top3Builds,
+        List<String> explanations,
         ChecksDto checks,
-        List<String> reasoning,
-        List<AlternativeDto> alternatives,
-        List<String> marketInsights
+        MetricsDto metrics,
+        List<String> warnings
 ) {
-    public record IntentDto(
-                        BigDecimal budgetKzt,
+    public record RequirementsDto(
+            BigDecimal budgetKzt,
             String useCase,
             String targetResolution,
             List<String> priorities,
-            ConstraintsDto constraints
+            ConstraintsDto constraints,
+            String market,
+            Boolean strictBudget,
+            Boolean strictStockOnly
     ) {
     }
 
@@ -40,7 +42,20 @@ public record BuildResponse(
             String socket,
             String memoryType,
             Integer wattage,
-            String chipset
+            String chipset,
+            Integer performanceScore,
+            String tierLabel,
+            String stockStatus
+    ) {
+    }
+
+    public record BuildVariantDto(
+            String label,
+            Map<String, PartDto> parts,
+            TotalsDto totals,
+            BigDecimal score,
+            List<String> tradeoffs,
+            ChecksDto checks
     ) {
     }
 
@@ -52,24 +67,28 @@ public record BuildResponse(
     }
 
     public record ChecksDto(
+            Boolean compatibilityPassed,
             Boolean socketCompatible,
             Boolean memoryCompatible,
-            Boolean powerHeadroomOk,
-            Boolean budgetOk
+            Boolean psuMinimumHeadroomPassed,
+            Boolean psuPreferredHeadroomPassed,
+            Boolean budgetOk,
+            Boolean cpuGpuBalanceOk,
+            Boolean stockValidated,
+            Boolean stockValidationEnforced,
+            Boolean caseFitValidated,
+            String powerEstimateConfidence
     ) {
     }
 
-    public record AlternativeDto(
-            String label,
-            BigDecimal totalKzt,
-            String tradeoff
-    ) {
-    }
-
-    public record PartOptionDto(
-            PartDto part,
-            BigDecimal score,
-            String reason
+    public record MetricsDto(
+            Long latencyMs,
+            Integer candidateBuildsEvaluated,
+            Integer compatibleBuilds,
+            String scoreVersion,
+            BigDecimal performanceMappingCoveragePercent,
+            Integer fallbackInferenceCount,
+            String normalizedDataConfidence
     ) {
     }
 }
