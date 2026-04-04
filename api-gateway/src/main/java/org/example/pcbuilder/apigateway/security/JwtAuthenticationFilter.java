@@ -20,10 +20,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private final JwtService jwtService;
+    private final AuthTokenValidationService authTokenValidationService;
     private final AntPathMatcher antPathMatcher;
 
-    public JwtAuthenticationFilter(JwtService jwtService) {
+    public JwtAuthenticationFilter(JwtService jwtService, AuthTokenValidationService authTokenValidationService) {
         this.jwtService = jwtService;
+        this.authTokenValidationService = authTokenValidationService;
         this.antPathMatcher = new AntPathMatcher();
     }
 
@@ -43,6 +45,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Ensure gateway honors auth-service logout/revocation state.
+        if (!authTokenValidationService.isTokenActive(token)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
+        }
+
         String username = jwtService.extractUsername(token);
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(
@@ -58,6 +66,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return true;
+        String path = request.getServletPath();
+        return antPathMatcher.match("/auth/**", path)
+                || antPathMatcher.match("/error", path)
+                || antPathMatcher.match("/actuator/**", path);
     }
 }

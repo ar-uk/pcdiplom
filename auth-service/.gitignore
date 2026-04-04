@@ -15,3 +15,7 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# Local environment overrides
+.env
+.env.*
