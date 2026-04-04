@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { loadSession } from "./lib/session.js";
 import "./styles/pages/discovery.css";
 
 const featuredBuilds = [
@@ -115,6 +116,7 @@ export default function DiscoveryPage() {
   const navigate = useNavigate();
   const carouselRef = useRef(null);
   const [filter, setFilter] = useState("All");
+  const [session] = useState(() => loadSession());
 
   const filteredPosts = useMemo(() => {
     if (filter === "All") return discoverPosts;
@@ -138,12 +140,14 @@ export default function DiscoveryPage() {
 
         <nav className="topnav">
           <span className="nav-active" onClick={() => navigate("/discover")}>Discovery</span>
-          <span>Builder</span>
+          <span onClick={() => navigate("/build")}>Builder</span>
           <span>Guides</span>
           <span>Community</span>
         </nav>
 
-        <div className="profile-link" onClick={() => navigate("/profile")}>Profile</div>
+        <div className="profile-link" onClick={() => navigate(session ? "/profile" : "/auth")}>
+          {session ? "Profile" : "Sign in"}
+        </div>
       </header>
 
       <main className="discovery-layout">
