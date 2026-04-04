@@ -1,0 +1,174 @@
+.post-details-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0e2a35 0%, #07161c 100%);
+  color: #ffffff;
+  font-family: system-ui, Arial, sans-serif;
+}
+
+.post-details-page * {
+  box-sizing: border-box;
+}
+
+.post-details-page .topbar {
+  height: 56px;
+  padding: 0 20px;
+  background: #0b1013;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.post-details-page .logo {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  cursor: pointer;
+}
+
+.post-details-page .topnav {
+  display: flex;
+  gap: 24px;
+  color: #9db0bc;
+  font-weight: 700;
+}
+
+.post-details-page .topnav span,
+.post-details-page .profile-link {
+  cursor: pointer;
+}
+
+.post-details-page .profile-link {
+  font-weight: 800;
+}
+
+.post-details-page .post-details-layout {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.post-details-page .panel {
+  background: rgba(8, 18, 23, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.post-details-page h1,
+.post-details-page h2 {
+  margin: 0 0 8px;
+}
+
+.post-details-page .meta {
+  color: #a6b8c3;
+  font-size: 13px;
+}
+
+.post-details-page .body {
+  margin: 10px 0 0;
+}
+
+.post-details-page .build-summary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.post-details-page .build-summary span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.post-details-page .parts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.post-details-page .copy-build-btn {
+  margin-bottom: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(94, 231, 255, 0.18);
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.post-details-page .copy-build-btn:hover {
+  background: rgba(94, 231, 255, 0.26);
+}
+
+.post-details-page .part-card {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.post-details-page .part-slot {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #72d9ff;
+}
+
+.post-details-page .part-name {
+  margin-top: 4px;
+  font-weight: 700;
+}
+
+.post-details-page .part-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #c8d5de;
+}
+
+.post-details-page .comment-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.post-details-page .comment-item {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.post-details-page .comment-author {
+  color: #72d9ff;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.post-details-page .comment-compose {
+  display: flex;
+  gap: 8px;
+}
+
+.post-details-page .comment-compose input {
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.post-details-page .comment-compose button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(94, 231, 255, 0.2);
+  color: #fff;
+  cursor: pointer;
+}

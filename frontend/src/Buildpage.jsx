@@ -891,7 +891,6 @@ export default function BuilderPage() {
           <span onClick={() => navigate("/discover")}>Discovery</span>
           <span className="nav-active">Builder</span>
           <span>Guides</span>
-          <span>Community</span>
         </nav>
 
         <div className="profile-link" onClick={() => navigate(session ? "/profile" : "/auth")}>

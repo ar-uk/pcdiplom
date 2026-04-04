@@ -193,4 +193,5 @@ public class ShopScraperService {
             default -> normalized;
         };
     }
+
 }

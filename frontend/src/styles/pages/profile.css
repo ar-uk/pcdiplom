@@ -341,3 +341,44 @@
   background: #2f4f5f;
   border-radius: 10px;
 }
+
+.profile-page .community-posts-section {
+  margin-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+}
+
+.profile-page .community-posts-head {
+  font-size: 16px;
+  font-weight: 900;
+  color: #ffffff;
+  margin-bottom: 10px;
+}
+
+.profile-page .community-post-composer {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.profile-page .community-post-composer input,
+.profile-page .community-post-composer textarea,
+.profile-page .community-post-composer select {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(7, 22, 28, 0.8);
+  color: #ffffff;
+  padding: 9px 10px;
+  font: inherit;
+}
+
+.profile-page .community-post-composer textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.profile-page .my-posts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}

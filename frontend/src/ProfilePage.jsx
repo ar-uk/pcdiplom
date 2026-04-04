@@ -29,6 +29,13 @@ export default function ProfilePage() {
   const [builds, setBuilds] = useState([]);
   const [buildsLoading, setBuildsLoading] = useState(false);
   const [buildsError, setBuildsError] = useState("");
+  const [myPosts, setMyPosts] = useState([]);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [postTitle, setPostTitle] = useState("");
+  const [postBody, setPostBody] = useState("");
+  const [postTags, setPostTags] = useState("");
+  const [postImageUrl, setPostImageUrl] = useState("");
+  const [attachedBuildId, setAttachedBuildId] = useState("");
 
   useEffect(() => {
     setSession(loadSession());
@@ -80,6 +87,118 @@ export default function ProfilePage() {
       alive = false;
     };
   }, [session?.email, session?.token]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadMyPosts() {
+      if (!session?.email) {
+        if (alive) {
+          setMyPosts([]);
+          setPostsLoading(false);
+        }
+        return;
+      }
+
+      setPostsLoading(true);
+      try {
+        const response = await fetch("/community/posts?sort=new");
+        if (!response.ok) {
+          throw new Error("Failed to load community posts");
+        }
+
+        const rows = await response.json();
+        if (!alive) return;
+        const normalizedUser = session.email.trim().toLowerCase();
+        setMyPosts((Array.isArray(rows) ? rows : []).filter((post) => (post.authorUserId || "").toLowerCase() === normalizedUser));
+      } catch {
+        if (!alive) return;
+        setMyPosts([]);
+      } finally {
+        if (alive) setPostsLoading(false);
+      }
+    }
+
+    loadMyPosts();
+    return () => {
+      alive = false;
+    };
+  }, [session?.email]);
+
+  const handleCreatePost = async () => {
+    if (!session?.email) {
+      navigate("/auth");
+      return;
+    }
+
+    const title = postTitle.trim();
+    const body = postBody.trim();
+    if (!title || !body) {
+      setError("Post title and text are required.");
+      return;
+    }
+
+    const selectedBuild = builds.find((build) => String(build.id) === String(attachedBuildId));
+
+    try {
+      const response = await fetch("/community/posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          authorUserId: session.email.trim().toLowerCase(),
+          title,
+          body,
+          buildId: selectedBuild ? Number(selectedBuild.id) : null,
+          buildSnapshotJson: selectedBuild ? JSON.stringify(selectedBuild.selectedParts ?? {}) : null,
+          tags: postTags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+          imageUrls: postImageUrl.trim() ? [postImageUrl.trim()] : [],
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Failed to create post (${response.status})`);
+      }
+
+      const created = await response.json();
+      setMyPosts((prev) => [created, ...prev]);
+      setPostTitle("");
+      setPostBody("");
+      setPostTags("");
+      setPostImageUrl("");
+      setAttachedBuildId("");
+      setError("");
+    } catch (createError) {
+      setError(createError.message || "Could not create post.");
+    }
+  };
+
+  const handleDeletePost = async (postId) => {
+    if (!session?.email) {
+      navigate("/auth");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/community/posts/${postId}?userId=${encodeURIComponent(session.email.trim().toLowerCase())}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Failed to delete post (${response.status})`);
+      }
+
+      setMyPosts((prev) => prev.filter((post) => post.id !== postId));
+    } catch (deleteError) {
+      setError(deleteError.message || "Could not delete post.");
+    }
+  };
 
   const handleLogout = async () => {
     setBusy(true);
@@ -319,6 +438,43 @@ export default function ProfilePage() {
                 </button>
               </div>
             ))}
+          </div>
+
+          <div className="community-posts-section">
+            <div className="community-posts-head">My posts</div>
+            <div className="community-post-composer">
+              <input value={postTitle} onChange={(event) => setPostTitle(event.target.value)} placeholder="Post title" />
+              <textarea value={postBody} onChange={(event) => setPostBody(event.target.value)} placeholder="Write something about your build..." />
+              <input value={postTags} onChange={(event) => setPostTags(event.target.value)} placeholder="Tags (comma separated)" />
+              <input value={postImageUrl} onChange={(event) => setPostImageUrl(event.target.value)} placeholder="Image URL (optional)" />
+              <select value={attachedBuildId} onChange={(event) => setAttachedBuildId(event.target.value)}>
+                <option value="">No attached PC build</option>
+                {builds.map((build) => (
+                  <option key={build.id} value={build.id}>{build.title ?? `Build #${build.id}`}</option>
+                ))}
+              </select>
+              <button type="button" className="new-build-btn" onClick={handleCreatePost}>Create post</button>
+            </div>
+
+            {postsLoading ? <div className="build-subtitle">Loading your posts...</div> : null}
+            {!postsLoading && myPosts.length === 0 ? <div className="build-subtitle">No posts yet.</div> : null}
+
+            <div className="my-posts-grid">
+              {myPosts.map((post, index) => (
+                <div className="build-card" key={post.id ?? index}>
+                  <div className="build-image-wrap">
+                    <img className="build-image" src={post.imageUrls?.[0] || PLACEHOLDERS[index % PLACEHOLDERS.length]} alt={post.title} />
+                    <div className="build-image-overlay">
+                      <div className="build-title">{post.title}</div>
+                      <div className="build-price">{`Score ${post.score ?? 0}`}</div>
+                    </div>
+                  </div>
+                  <div className="build-subtitle">{post.body}</div>
+                  <div className="build-subtitle">{post.buildId ? `Attached PC build #${post.buildId}` : "No attached PC build"}</div>
+                  <button type="button" className="build-edit-btn" onClick={() => handleDeletePost(post.id)}>Delete post</button>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
       </main>

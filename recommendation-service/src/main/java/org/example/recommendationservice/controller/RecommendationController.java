@@ -12,6 +12,8 @@ import org.example.recommendationservice.dto.ManualBuildDraftPartUpdateRequest;
 import org.example.recommendationservice.dto.ManualBuildDraftResponse;
 import org.example.recommendationservice.dto.ManualBuildFinalizeRequest;
 import org.example.recommendationservice.dto.ManualBuildResponse;
+import org.example.recommendationservice.dto.RecommendationEvaluationRequest;
+import org.example.recommendationservice.dto.RecommendationEvaluationResponse;
 import org.example.recommendationservice.service.FreshBuildRecommendationService;
 import org.example.recommendationservice.service.ManualBuildService;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +45,11 @@ public class RecommendationController {
             @Valid @RequestBody ChatRequest request
     ) {
         return ResponseEntity.ok(buildRecommendationService.applyChat(sessionId, request));
+    }
+
+    @PostMapping("/evaluate")
+    public ResponseEntity<RecommendationEvaluationResponse> evaluate(@Valid @RequestBody RecommendationEvaluationRequest request) {
+        return ResponseEntity.ok(buildRecommendationService.evaluate(request));
     }
 
     @PostMapping("/manual-builds/finalize")

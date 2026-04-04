@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import HomePage from "./HomePage.jsx";
 import DiscoveryPage from "./Discovery.jsx";
+import PostDetailsPage from "./PostDetailsPage.jsx";
 import ProfilePage from "./ProfilePage.jsx";
 import AuthPage from "./AuthPage.jsx";
 import BuilderPage from "./Buildpage.jsx";
@@ -11,6 +12,7 @@ function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/discover" element={<DiscoveryPage />} />
+      <Route path="/discover/post/:postId" element={<PostDetailsPage />} />
       <Route path="/build" element={<BuilderPage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
