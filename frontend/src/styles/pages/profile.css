@@ -92,6 +92,76 @@
   color: #ffffff;
 }
 
+.profile-page .security-card {
+  background: rgba(12, 29, 37, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 14px;
+  color: #eff6f9;
+}
+
+.profile-page .security-title {
+  font-size: 14px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.profile-page .security-card p {
+  margin: 0 0 10px;
+  color: #9cb0bc;
+  font-size: 13px;
+}
+
+.profile-page .security-error {
+  color: #ffb1be;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.profile-page .security-status {
+  color: #8cf0ff;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.profile-page .security-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.profile-page .security-actions button,
+.profile-page .security-card > button,
+.profile-page .verify-card button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #5ee7ff 0%, #7d68ff 100%);
+  color: #041015;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.profile-page .ghost-btn {
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: #ffffff !important;
+}
+
+.profile-page .verify-card {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-page .verify-card input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 22, 28, 0.88);
+  color: #ffffff;
+  padding: 10px 12px;
+}
+
 .profile-page .change-btn {
   grid-column: 2;
   background: transparent;

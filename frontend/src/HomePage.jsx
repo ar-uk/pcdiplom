@@ -1,18 +1,21 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { loadSession } from "./lib/session.js";
 
 export default function HomePage() {
   const navigate = useNavigate();
+  const [session] = useState(() => loadSession());
 
   return (
-    <>
+    <div className="home-shell">
       <header>
-        <div className="logo"><p>PCPartPicker</p></div>
+        <div className="logo" onClick={() => navigate("/")}><p>PCPartPicker</p></div>
         <nav className="menu">
           <p onClick={() => navigate("/discover")}>Discover</p>
           <p>Guides</p>
-          <p>Builder</p>
+          <p onClick={() => navigate("/build")}>Builder</p>
         </nav>
-        <div className="profile" onClick={() => navigate("/profile")}><p>Profile</p></div>
+        <div className="profile" onClick={() => navigate(session ? "/profile" : "/auth")}><p>{session ? "Profile" : "Sign In"}</p></div>
       </header>
 
       <main className="content">
@@ -28,6 +31,6 @@ export default function HomePage() {
           <button type="button"><span>Generate</span></button>
         </div>
       </main>
-    </>
+    </div>
   );
 }
