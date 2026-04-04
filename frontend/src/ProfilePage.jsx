@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { confirmEnableTwoFactor, disableTwoFactor, enableTwoFactor, logout } from "./lib/authApi.js";
+import { clearSession, loadSession, saveSession } from "./lib/session.js";
 import "./styles/pages/profile.css";
 import profiledflt from "./assets/profiledflt.jpg";
 const PLACEHOLDERS = [
@@ -12,10 +14,13 @@ const PLACEHOLDERS = [
 ];
 
 export default function ProfilePage() {
-  const [user] = useState({
-    id: "0917232",
-    name: "Demo User",
-  });
+  const navigate = useNavigate();
+  const [session, setSession] = useState(() => loadSession());
+  const [challenge, setChallenge] = useState(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
   const [builds] = useState([
     { id: 1, name: "RTX 4060 Build", cpu: "Intel i5 12400F" },
     { id: 2, name: "Gaming Beast", cpu: "Ryzen 7 5800X" },
@@ -30,11 +35,115 @@ export default function ProfilePage() {
     { id: 11, name: "Silent Builddsf", cpu: "Intel i5 13400" },
     { id: 12, name: "Silent Buildasdasd", cpu: "Intel i5 13400" },
   ]);
-  const navigate = useNavigate();
+  useEffect(() => {
+    setSession(loadSession());
+  }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
+  const handleLogout = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      if (session?.token) {
+        await logout(session.token);
+      }
+    } catch {
+      // Ignore logout transport errors and clear the local session anyway.
+    }
+    clearSession();
     navigate("/");
+    setBusy(false);
+  };
+
+  const handleEnableTwoFactor = async () => {
+    if (!session?.token) {
+      navigate("/auth");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setStatus("");
+    try {
+      const result = await enableTwoFactor(session.token);
+      if (result.response.status === 202) {
+        setChallenge(result.data);
+        setStatus(result.data?.message ?? "Verification code sent.");
+      } else {
+        const serverMessage = result.data?.message ?? result.data?.error ?? result.response.statusText;
+        setError(
+          serverMessage
+            ? `Unable to request 2FA code (${result.response.status}): ${serverMessage}`
+            : `Unable to request 2FA code (${result.response.status}).`,
+        );
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleConfirmTwoFactor = async (event) => {
+    event.preventDefault();
+    if (!challenge?.challengeId || !session?.token) {
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const result = await confirmEnableTwoFactor(
+        { challengeId: challenge.challengeId, code },
+        session.token,
+      );
+
+      if (!result.response.ok) {
+        setError(result.data?.message ?? "Unable to enable 2FA.");
+        return;
+      }
+
+      const nextSession = { ...session, verified: true };
+      saveSession(nextSession);
+      setSession(nextSession);
+      setChallenge(null);
+      setCode("");
+      setStatus("2FA is now enabled for this account.");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisableTwoFactor = async () => {
+    if (!session?.token) {
+      navigate("/auth");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const result = await disableTwoFactor(session.token);
+      if (!result.response.ok) {
+        const serverMessage = result.data?.message ?? result.data?.error ?? result.response.statusText;
+        setError(
+          serverMessage
+            ? `Unable to disable 2FA (${result.response.status}): ${serverMessage}`
+            : `Unable to disable 2FA (${result.response.status}).`,
+        );
+        return;
+      }
+
+      const nextSession = { ...session, verified: false };
+      saveSession(nextSession);
+      setSession(nextSession);
+      setStatus("2FA has been turned off.");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
 
@@ -45,25 +154,64 @@ export default function ProfilePage() {
         <nav className="menu">
           <span onClick={() => navigate("/discover")}>Discover</span>
           <span>Guides</span>
-          <span>Builder</span>
+          <span onClick={() => navigate("/build")}>Builder</span>
         </nav>
         <div className="profile-link" onClick={handleLogout}>
-          Profile
+          {session ? "Logout" : "Profile"}
         </div>
       </header>
 
       <main className="profile-layout">
         <aside className="sidebar">
           <div className="user-card">
-                <img className="avatar-box" src={profiledflt} alt="Company Logo"/>
+            <img className="avatar-box" src={profiledflt} alt="Profile avatar" />
 
             <div className="user-info">
-              <div>Name</div>
-              <div>ID {user?.id ?? "0917232"}</div>
-              <div>Password*</div>
-              <div>21.05.2025</div>
+              <div>{session?.username ?? "Sign in required"}</div>
+              <div>{session?.email ?? "No account loaded"}</div>
+              <div>2FA {session?.verified ? "On" : "Off"}</div>
+              <div>{session?.role ?? "Guest"}</div>
             </div>
           </div>
+
+          <div className="security-card">
+            <div className="security-title">Account security</div>
+            <p>{session?.verified ? "This account uses email 2FA." : "Turn on email 2FA for extra login protection."}</p>
+            {error ? <div className="security-error">{error}</div> : null}
+            {status ? <div className="security-status">{status}</div> : null}
+            {session ? (
+              <div className="security-actions">
+                <button type="button" onClick={handleEnableTwoFactor} disabled={busy || session.verified}>
+                  Enable 2FA
+                </button>
+                <button type="button" className="ghost-btn" onClick={handleDisableTwoFactor} disabled={busy || !session.verified}>
+                  Disable 2FA
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => navigate("/auth")}>
+                Sign in to manage security
+              </button>
+            )}
+          </div>
+
+          {challenge ? (
+            <form className="security-card verify-card" onSubmit={handleConfirmTwoFactor}>
+              <div className="security-title">Confirm 2FA</div>
+              <p>Enter the code sent to {challenge.email}.</p>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="123456"
+                value={code}
+                onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
+              />
+              <button type="submit" disabled={busy || code.length !== 6}>
+                Confirm 2FA
+              </button>
+            </form>
+          ) : null}
 
           <div className="side-empty" />
         </aside>
