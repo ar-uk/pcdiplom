@@ -1,3 +1,4 @@
+﻿==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\service\FreshBuildRecommendationService.java ====================
 package org.example.recommendationservice.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -43,7 +44,7 @@ public class FreshBuildRecommendationService {
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d{2,7}(?:\\.\\d+)?)");
     private static final Pattern CPU_QUERY_PATTERN = Pattern.compile("(?i)(ryzen\\s+[3579]\\s+\\d{4}x?|ryzen\\s+[3579]\\s+\\d{4}|core\\s+i[3579]-?\\d{4,5}f?|i[3579]-?\\d{4,5}f?)");
     private static final Pattern GPU_QUERY_PATTERN = Pattern.compile("(?i)(rtx\\s*\\d{3,4}(?:\\s*ti)?|rx\\s*\\d{3,4}(?:\\s*xt)?|arc\\s*\\w+)");
-        private static final Pattern EXPLICIT_KZT_PATTERN = Pattern.compile("(?i)(\\d{2,3}(?:[\\s,]\\d{3})+|\\d{5,7})\\s*(kzt|тенге|₸)");
+        private static final Pattern EXPLICIT_KZT_PATTERN = Pattern.compile("(?i)(\\d{2,3}(?:[\\s,]\\d{3})+|\\d{5,7})\\s*(kzt|Ñ‚ÐµÐ½Ð³Ðµ|â‚¸)");
         private static final Pattern EXPLICIT_USD_PATTERN = Pattern.compile("(?i)(\\d{2,5}(?:[\\s,]\\d{3})*|\\d{2,5})\\s*(usd|dollar|\\$)");
 
         private static final Map<String, Integer> CPU_WATTAGE_LOOKUP = Map.ofEntries(
@@ -96,12 +97,7 @@ public class FreshBuildRecommendationService {
     }
 
     public BuildResponse applyChat(String sessionId, ChatRequest request) {
-        AiSavedBuild existing = null;
-        try {
-            existing = aiSavedBuildRepository.findFirstBySessionId(sessionId).orElse(null);
-        } catch (Exception ignored) {
-            // Session snapshot lookup should never break chat edits.
-        }
+        AiSavedBuild existing = aiSavedBuildRepository.findFirstBySessionId(sessionId).orElse(null);
         String userId = existing == null ? null : existing.getUserId();
         String currency = existing == null ? "KZT" : existing.getCurrency();
         String region = existing == null ? "KZ" : existing.getRegion();
@@ -389,15 +385,8 @@ public class FreshBuildRecommendationService {
 
             for (BuildResponse.PartDto gpu : rankedGpu.stream().limit(10).toList()) {
                 Tier gpuTier = tierOf(gpu);
-                boolean pairingAllowed = cpuGpuPairingAllowed(cpuTier, gpuTier, requirements.useCase());
-                if (!pairingAllowed) {
-                    boolean performancePriority = requirements != null
-                            && requirements.priorities() != null
-                            && requirements.priorities().stream()
-                            .anyMatch(priority -> priority != null && priority.toLowerCase(Locale.ROOT).contains("performance"));
-                    if (!performancePriority) {
-                        continue;
-                    }
+                if (!cpuGpuPairingAllowed(cpuTier, gpuTier, requirements.useCase())) {
+                    continue;
                 }
 
                 for (BuildResponse.PartDto motherboard : motherboardCandidates.stream().limit(3).toList()) {
@@ -693,12 +682,14 @@ public class FreshBuildRecommendationService {
         double performance = part.performanceScore() == null ? 0 : part.performanceScore();
         double upgrade = upgradePathScore(part, component, requirements);
 
-        if ("storage".equals(component) && requirements != null && "gaming".equalsIgnoreCase(requirements.useCase())) {
-            if (isSsd(part)) {
-                performance += 30;
-            }
-            if (isHdd(part)) {
-                performance -= 40;
+        if ("storage".equals(component) && requirements != null) {
+            if ("gaming".equalsIgnoreCase(requirements.useCase())) {
+                if (isSsdLike(part)) {
+                    performance += 25;
+                }
+                if (isHdd(part)) {
+                    performance -= 30;
+                }
             }
         }
 
@@ -725,7 +716,7 @@ public class FreshBuildRecommendationService {
         return name.contains("hdd") || name.contains("3.5");
     }
 
-    private boolean isSsd(BuildResponse.PartDto part) {
+    private boolean isSsdLike(BuildResponse.PartDto part) {
         String name = part == null || part.name() == null ? "" : part.name().toLowerCase(Locale.ROOT);
         return name.contains("ssd") || name.contains("nvme") || name.contains("m.2");
     }
@@ -783,8 +774,20 @@ public class FreshBuildRecommendationService {
         if (cpuTier == null || gpuTier == null) {
             return false;
         }
+
+        if ("gaming".equalsIgnoreCase(useCase)) {
+            Map<Tier, Set<Tier>> allowedCpuByGpu = new EnumMap<>(Tier.class);
+            allowedCpuByGpu.put(Tier.ENTRY, Set.of(Tier.ENTRY, Tier.LOW_MID, Tier.MID));
+            allowedCpuByGpu.put(Tier.LOW_MID, Set.of(Tier.ENTRY, Tier.LOW_MID, Tier.MID));
+            allowedCpuByGpu.put(Tier.MID, Set.of(Tier.LOW_MID, Tier.MID, Tier.MID_HIGH));
+            allowedCpuByGpu.put(Tier.MID_HIGH, Set.of(Tier.MID, Tier.MID_HIGH, Tier.HIGH));
+            allowedCpuByGpu.put(Tier.HIGH, Set.of(Tier.MID_HIGH, Tier.HIGH, Tier.ENTHUSIAST));
+            allowedCpuByGpu.put(Tier.ENTHUSIAST, Set.of(Tier.HIGH, Tier.ENTHUSIAST));
+            return allowedCpuByGpu.getOrDefault(gpuTier, Set.of()).contains(cpuTier);
+        }
+
         int delta = Math.abs(cpuTier.ordinal() - gpuTier.ordinal());
-        return delta <= 3;
+        return delta <= 2;
     }
 
     private int effectiveFallbackCount(List<BuildResponse.BuildVariantDto> top3) {
@@ -962,7 +965,7 @@ public class FreshBuildRecommendationService {
         BigDecimal budget = extractBudgetFromPrompt(prompt);
         if (budget == null || budget.signum() <= 0 || DEFAULT_BUDGET.compareTo(budget) == 0) {
             if (normalized.contains("low-end") || normalized.contains("budget") || normalized.contains("cheap")) {
-                budget = new BigDecimal("400000");
+                budget = new BigDecimal("300000");
             } else if (normalized.contains("high-end")
                     || normalized.contains("ultra")
                     || normalized.contains("max settings")
@@ -1657,7 +1660,7 @@ public class FreshBuildRecommendationService {
         }
 
         String normalized = prompt.toLowerCase(Locale.ROOT);
-        boolean tenge = normalized.contains("tenge") || normalized.contains("kzt") || normalized.contains("₸");
+        boolean tenge = normalized.contains("tenge") || normalized.contains("kzt") || normalized.contains("â‚¸");
         boolean usd = normalized.contains("usd") || normalized.contains("$") || normalized.contains("dollar");
 
         Matcher matcher = NUMBER_PATTERN.matcher(prompt.replace(",", ""));
@@ -1989,7 +1992,7 @@ public class FreshBuildRecommendationService {
         return value == null
                 ? ""
                 : value.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9а-яё\\s]", " ")
+                .replaceAll("[^a-z0-9Ð°-ÑÑ‘\\s]", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
     }
@@ -2171,3 +2174,605 @@ public class FreshBuildRecommendationService {
         BuildResponse.PartDto map(JsonNode node);
     }
 }
+
+
+==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\service\HardwareFallbackResolver.java ====================
+package org.example.recommendationservice.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@Component
+public class HardwareFallbackResolver {
+
+    private static final BigDecimal USD_TO_KZT = new BigDecimal("455");
+
+    private static final Pattern CPU_QUERY_PATTERN = Pattern.compile("(?i)(ryzen\\s+[3579]\\s+\\d{4}x?|ryzen\\s+[3579]\\s+\\d{4}|core\\s+i[3579]-?\\d{4,5}f?|i[3579]-?\\d{4,5}f?)");
+    private static final Pattern GPU_QUERY_PATTERN = Pattern.compile("(?i)(rtx\\s*\\d{3,4}(?:\\s*ti)?|rx\\s*\\d{3,4}(?:\\s*xt)?|arc\\s*\\w+)");
+
+    private static final Pattern CPU_NAME_PATTERN = Pattern.compile("(?i)(ryzen\\s+[3579]\\s+\\d{4}x?|ryzen\\s+[3579]\\s+\\d{4}|core\\s+i[3579]-?\\d{4,5}f?|i[3579]-?\\d{4,5}f?)");
+    private static final Pattern GPU_NAME_PATTERN = Pattern.compile("(?i)(rtx\\s*\\d{3,4}(?:\\s*ti)?|rx\\s*\\d{3,4}(?:\\s*xt)?|arc\\s*\\w+)");
+
+    private static final Map<String, Integer> CPU_WATTAGE_LOOKUP = Map.ofEntries(
+            Map.entry("ryzen 5 7600", 88),
+            Map.entry("ryzen 7 7700", 88),
+            Map.entry("ryzen 7 7800x3d", 120),
+            Map.entry("ryzen 9 7900", 170),
+            Map.entry("core i5 13400", 148),
+            Map.entry("core i5 13600", 181),
+            Map.entry("core i7 13700", 253),
+            Map.entry("core i7 14700", 253),
+            Map.entry("core i9 14900", 253)
+    );
+
+    private static final Map<String, Integer> GPU_WATTAGE_LOOKUP = Map.ofEntries(
+            Map.entry("rtx 4060", 115),
+            Map.entry("rtx 4060 ti", 160),
+            Map.entry("rtx 4070", 200),
+            Map.entry("rtx 4070 super", 220),
+            Map.entry("rtx 4080", 320),
+            Map.entry("rtx 4090", 450),
+            Map.entry("rx 7600", 165),
+            Map.entry("rx 7700 xt", 245),
+            Map.entry("rx 7800 xt", 263),
+            Map.entry("rx 7900 xt", 315),
+            Map.entry("rx 7900 xtx", 355)
+    );
+
+    public ResolvedValue<String> resolveCpuSocket(String normalizedSocket, String cpuName) {
+        if (normalizedSocket != null && !normalizedSocket.isBlank()) {
+            return new ResolvedValue<>(normalizedSocket, false);
+        }
+        String normalized = normalize(cpuName);
+        if (normalized.contains("am5") || normalized.matches(".*ryzen [3579] [789]\\d{3}.*")) {
+            return new ResolvedValue<>("AM5", true);
+        }
+        if (normalized.contains("am4") || normalized.matches(".*ryzen [3579] [1-5]\\d{3}.*")) {
+            return new ResolvedValue<>("AM4", true);
+        }
+        if (normalized.contains("lga1700") || normalized.contains("12th") || normalized.contains("13th") || normalized.contains("14th") || normalized.matches(".*i[3579] 1[2-4]\\d{3}.*")) {
+            return new ResolvedValue<>("LGA1700", true);
+        }
+        if (normalized.contains("lga1200") || normalized.contains("10th") || normalized.contains("11th")) {
+            return new ResolvedValue<>("LGA1200", true);
+        }
+        return new ResolvedValue<>(null, true);
+    }
+
+    public ResolvedValue<String> resolveMemoryTypeFromName(String memoryName) {
+        String normalized = normalize(memoryName);
+        if (normalized.contains("ddr5")) {
+            return new ResolvedValue<>("DDR5", true);
+        }
+        if (normalized.contains("ddr4")) {
+            return new ResolvedValue<>("DDR4", true);
+        }
+        return new ResolvedValue<>(null, true);
+    }
+
+    public ResolvedValue<Integer> resolveCpuWattage(JsonNode node, String cpuName) {
+        Integer normalized = readInteger(node, "tdpW", "wattageW", "cpuTdpW");
+        if (normalized != null && normalized > 0) {
+            return new ResolvedValue<>(normalized, false);
+        }
+
+        String normalizedName = normalize(cpuName);
+        for (Map.Entry<String, Integer> entry : CPU_WATTAGE_LOOKUP.entrySet()) {
+            if (normalizedName.contains(entry.getKey())) {
+                return new ResolvedValue<>(entry.getValue(), true);
+            }
+        }
+        return new ResolvedValue<>(extractCpuWattage(cpuName), true);
+    }
+
+    public ResolvedValue<Integer> resolveGpuWattage(JsonNode node, String gpuName) {
+        Integer normalized = readInteger(node, "tdpW", "wattageW", "gpuTdpW");
+        if (normalized != null && normalized > 0) {
+            return new ResolvedValue<>(normalized, false);
+        }
+
+        String name = normalize(gpuName).replace(" ", "");
+
+        if (name.contains("5090") || name.contains("4090") || name.contains("7900xtx")) {
+            return new ResolvedValue<>(420, true);
+        }
+        if (name.contains("5080") || name.contains("4080") || name.contains("7900xt") || name.contains("7800xt")) {
+            return new ResolvedValue<>(320, true);
+        }
+        if (name.contains("5070ti") || name.contains("4070ti")) {
+            return new ResolvedValue<>(285, true);
+        }
+        if (name.contains("5070") || name.contains("4070super") || name.contains("4070") || name.contains("7700xt")) {
+            return new ResolvedValue<>(245, true);
+        }
+        if (name.contains("4060ti")) {
+            return new ResolvedValue<>(160, true);
+        }
+        if (name.contains("5060") || name.contains("4060") || name.contains("7600")) {
+            return new ResolvedValue<>(165, true);
+        }
+        if (name.contains("3060") || name.contains("3050") || name.contains("6600")) {
+            return new ResolvedValue<>(130, true);
+        }
+
+        return new ResolvedValue<>(170, true);
+    }
+
+    public ResolvedValue<String> resolveCpuTierLabel(String cpuName) {
+        String normalized = normalize(cpuName);
+        if (normalized.contains("ryzen 9") || normalized.contains("core i9")) {
+            return new ResolvedValue<>("enthusiast", true);
+        }
+        if (normalized.contains("ryzen 7") || normalized.contains("core i7")) {
+            return new ResolvedValue<>("high", true);
+        }
+        if (normalized.contains("ryzen 5") || normalized.contains("core i5")) {
+            return new ResolvedValue<>("mid_high", true);
+        }
+        if (normalized.contains("ryzen 3") || normalized.contains("core i3")) {
+            return new ResolvedValue<>("mid", true);
+        }
+        return new ResolvedValue<>("low_mid", true);
+    }
+
+    public ResolvedValue<String> resolveGpuTierLabel(String gpuName) {
+        String normalized = normalize(gpuName);
+        String compact = normalized.replace(" ", "");
+        if (compact.contains("5090") || compact.contains("4090") || compact.contains("7900xtx")) {
+            return new ResolvedValue<>("enthusiast", true);
+        }
+        if (compact.contains("5080") || compact.contains("4080")
+                || compact.contains("7900xt") || compact.contains("7800xt")
+                || compact.contains("5070ti") || compact.contains("4070ti")) {
+            return new ResolvedValue<>("high", true);
+        }
+        if (compact.contains("5070") || compact.contains("4070super")
+                || compact.contains("4070") || compact.contains("7700xt")
+                || compact.contains("7700")) {
+            return new ResolvedValue<>("mid_high", true);
+        }
+        if (compact.contains("5060") || compact.contains("4060ti")
+                || compact.contains("4060") || compact.contains("7600xt")
+                || compact.contains("7600")) {
+            return new ResolvedValue<>("mid", true);
+        }
+        if (compact.contains("3060") || compact.contains("3050")
+                || compact.contains("6600") || compact.contains("6650")) {
+            return new ResolvedValue<>("low_mid", true);
+        }
+        return new ResolvedValue<>("entry", true);
+    }
+
+    public String extractCpuQuery(String prompt) {
+        return extractPattern(prompt, CPU_QUERY_PATTERN);
+    }
+
+    public String extractGpuQuery(String prompt) {
+        return extractPattern(prompt, GPU_QUERY_PATTERN);
+    }
+
+    private String extractPattern(String prompt, Pattern pattern) {
+        if (prompt == null || prompt.isBlank()) {
+            return null;
+        }
+        Matcher matcher = pattern.matcher(prompt);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    private Integer resolveFirstInteger(JsonNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode valueNode = node.path(fieldName);
+            if (!valueNode.isMissingNode() && !valueNode.isNull()) {
+                if (valueNode.isInt() || valueNode.isLong()) {
+                    return valueNode.intValue();
+                }
+                if (valueNode.isNumber()) {
+                    return valueNode.numberValue().intValue();
+                }
+                String raw = valueNode.asText("").replaceAll("[^0-9]", "").trim();
+                if (!raw.isBlank()) {
+                    try {
+                        return Integer.parseInt(raw);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private Integer readInteger(JsonNode node, String... fieldNames) {
+        return resolveFirstInteger(node, fieldNames);
+    }
+
+    private String normalize(String value) {
+        return value == null
+                ? ""
+                : value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9Ð°-ÑÑ‘\\s]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private int extractCpuWattage(String text) {
+        String normalized = normalize(text);
+        if (normalized.contains("ryzen 9") || normalized.contains("core i9")) {
+            return 170;
+        }
+        if (normalized.contains("ryzen 7") || normalized.contains("core i7")) {
+            return 125;
+        }
+        if (normalized.contains("ryzen 5") || normalized.contains("core i5")) {
+            return 95;
+        }
+        return 65;
+    }
+
+    private int extractGpuWattage(String text) {
+        String normalized = normalize(text);
+        int code = extractFirstInt(normalized, 0);
+        if (normalized.contains("4090") || normalized.contains("5090") || normalized.contains("7900 xtx")) {
+            return 420;
+        }
+        if (normalized.contains("4080") || normalized.contains("5080") || normalized.contains("7900 xt") || normalized.contains("7800 xt")) {
+            return 320;
+        }
+        if (normalized.contains("4070") || normalized.contains("5070") || normalized.contains("7700")) {
+            return 250;
+        }
+        if (normalized.contains("4060") || normalized.contains("5060") || normalized.contains("7600")) {
+            return 190;
+        }
+        if (code >= 3000) {
+            return 170;
+        }
+        return 120;
+    }
+
+    private Integer extractFirstInt(String text, int fallback) {
+        if (text == null) {
+            return fallback;
+        }
+        Matcher matcher = Pattern.compile("(\\d{2,4})").matcher(text);
+        if (matcher.find()) {
+            try {
+                return Integer.parseInt(matcher.group(1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return fallback;
+    }
+
+    public record ResolvedValue<T>(T value, boolean fallbackUsed) {
+    }
+}
+
+
+==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\dto\BuildResponse.java ====================
+package org.example.recommendationservice.dto;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+
+public record BuildResponse(
+        String sessionId,
+        RequirementsDto requirements,
+        String budgetBand,
+        List<BuildVariantDto> top3Builds,
+        List<String> explanations,
+        ChecksDto checks,
+        MetricsDto metrics,
+        List<String> warnings
+) {
+    public record RequirementsDto(
+            BigDecimal budgetKzt,
+            String useCase,
+            String targetResolution,
+            List<String> priorities,
+            ConstraintsDto constraints,
+            String market,
+            Boolean strictBudget,
+            Boolean strictStockOnly
+    ) {
+    }
+
+    public record ConstraintsDto(
+            String brandCpu,
+            String brandGpu,
+            Boolean rgb,
+            String caseSize,
+            Boolean wifiRequired
+    ) {
+    }
+
+    public record PartDto(
+            Long id,
+            String name,
+            BigDecimal priceKzt,
+            String socket,
+            String memoryType,
+            Integer wattage,
+            String chipset,
+            Integer performanceScore,
+            String tierLabel,
+            String stockStatus
+    ) {
+    }
+
+    public record BuildVariantDto(
+            String label,
+            Map<String, PartDto> parts,
+            TotalsDto totals,
+            BigDecimal score,
+            List<String> tradeoffs,
+            ChecksDto checks
+    ) {
+    }
+
+    public record TotalsDto(
+            BigDecimal partsTotalKzt,
+            Integer estimatedSystemPowerW,
+            BigDecimal psuHeadroomPercent
+    ) {
+    }
+
+    public record ChecksDto(
+            Boolean compatibilityPassed,
+            Boolean socketCompatible,
+            Boolean memoryCompatible,
+            Boolean psuMinimumHeadroomPassed,
+            Boolean psuPreferredHeadroomPassed,
+            Boolean budgetOk,
+            Boolean cpuGpuBalanceOk,
+            Boolean stockValidated,
+            Boolean stockValidationEnforced,
+            Boolean caseFitValidated,
+            String powerEstimateConfidence
+    ) {
+    }
+
+    public record MetricsDto(
+            Long latencyMs,
+            Integer candidateBuildsEvaluated,
+            Integer compatibleBuilds,
+            String scoreVersion,
+            BigDecimal performanceMappingCoveragePercent,
+            Integer fallbackInferenceCount,
+            String normalizedDataConfidence
+    ) {
+    }
+}
+
+
+==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\controller\RecommendationController.java ====================
+package org.example.recommendationservice.controller;
+
+import jakarta.validation.Valid;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.example.recommendationservice.dto.BuildRequest;
+import org.example.recommendationservice.dto.BuildResponse;
+import org.example.recommendationservice.dto.ChatRequest;
+import org.example.recommendationservice.dto.ManualBuildDraftCreateRequest;
+import org.example.recommendationservice.dto.ManualBuildDraftFinalizeRequest;
+import org.example.recommendationservice.dto.ManualBuildDraftPartUpdateRequest;
+import org.example.recommendationservice.dto.ManualBuildDraftResponse;
+import org.example.recommendationservice.dto.ManualBuildFinalizeRequest;
+import org.example.recommendationservice.dto.ManualBuildResponse;
+import org.example.recommendationservice.dto.RecommendationEvaluationRequest;
+import org.example.recommendationservice.dto.RecommendationEvaluationResponse;
+import org.example.recommendationservice.service.FreshBuildRecommendationService;
+import org.example.recommendationservice.service.ManualBuildService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/recommendation")
+@RequiredArgsConstructor
+public class RecommendationController {
+
+    private final FreshBuildRecommendationService buildRecommendationService;
+    private final ManualBuildService manualBuildService;
+
+    @PostMapping("/build")
+    public ResponseEntity<BuildResponse> build(@Valid @RequestBody BuildRequest request) {
+        return ResponseEntity.ok(buildRecommendationService.createBuild(request));
+    }
+
+    @PostMapping("/chat/{sessionId}")
+    public ResponseEntity<BuildResponse> chat(
+            @PathVariable String sessionId,
+            @Valid @RequestBody ChatRequest request
+    ) {
+        return ResponseEntity.ok(buildRecommendationService.applyChat(sessionId, request));
+    }
+
+    @PostMapping("/evaluate")
+    public ResponseEntity<RecommendationEvaluationResponse> evaluate(@Valid @RequestBody RecommendationEvaluationRequest request) {
+        return ResponseEntity.ok(buildRecommendationService.evaluate(request));
+    }
+
+    @PostMapping("/manual-builds/finalize")
+    public ResponseEntity<ManualBuildResponse> finalizeManualBuild(@Valid @RequestBody ManualBuildFinalizeRequest request) {
+        return ResponseEntity.ok(manualBuildService.finalizeBuild(request));
+    }
+
+    @GetMapping("/manual-builds")
+    public ResponseEntity<List<ManualBuildResponse>> listManualBuilds(@RequestParam String userId) {
+        return ResponseEntity.ok(manualBuildService.listUserBuilds(userId));
+    }
+
+    @PostMapping("/manual-builds/drafts")
+    public ResponseEntity<ManualBuildDraftResponse> createManualBuildDraft(@Valid @RequestBody ManualBuildDraftCreateRequest request) {
+        return ResponseEntity.ok(manualBuildService.createDraft(request));
+    }
+
+    @GetMapping("/manual-builds/drafts/{draftId}")
+    public ResponseEntity<ManualBuildDraftResponse> getManualBuildDraft(
+            @PathVariable Long draftId,
+            @RequestParam String userId
+    ) {
+        return ResponseEntity.ok(manualBuildService.getDraft(draftId, userId));
+    }
+
+    @PatchMapping("/manual-builds/drafts/{draftId}/parts")
+    public ResponseEntity<ManualBuildDraftResponse> updateManualBuildDraftPart(
+            @PathVariable Long draftId,
+            @Valid @RequestBody ManualBuildDraftPartUpdateRequest request
+    ) {
+        return ResponseEntity.ok(manualBuildService.updateDraftPart(draftId, request));
+    }
+
+    @PostMapping("/manual-builds/drafts/{draftId}/finalize")
+    public ResponseEntity<ManualBuildResponse> finalizeManualBuildDraft(
+            @PathVariable Long draftId,
+            @Valid @RequestBody ManualBuildDraftFinalizeRequest request
+    ) {
+        return ResponseEntity.ok(manualBuildService.finalizeDraft(draftId, request));
+    }
+}
+
+
+==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\dto\RecommendationEvaluationRequest.java ====================
+package org.example.recommendationservice.dto;
+
+import jakarta.validation.constraints.NotEmpty;
+
+import java.util.List;
+
+public record RecommendationEvaluationRequest(
+        @NotEmpty List<String> prompts,
+        String currency,
+        String region,
+        Boolean strictBudget,
+        String userId
+) {
+}
+
+
+==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\dto\RecommendationEvaluationResponse.java ====================
+package org.example.recommendationservice.dto;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+public record RecommendationEvaluationResponse(
+        Integer totalCases,
+        Integer compatibilityPassedCases,
+        BigDecimal compatibilityPassRatePercent,
+        Integer budgetPassedCases,
+        BigDecimal budgetPassRatePercent,
+        Long avgLatencyMs,
+        Integer fallbackCases,
+        BigDecimal fallbackRatePercent,
+        List<CaseResultDto> cases
+) {
+    public record CaseResultDto(
+            String prompt,
+            Boolean compatibilityPassed,
+            Boolean budgetOk,
+            Long latencyMs,
+            Boolean fallbackUsed,
+            Integer warningCount,
+            String budgetBand,
+            String topVariant
+    ) {
+    }
+}
+
+
+==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\model\PartPerformanceMapping.java ====================
+package org.example.recommendationservice.model;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDateTime;
+
+@Getter
+@Setter
+@Entity
+@Table(name = "part_performance_mapping")
+public class PartPerformanceMapping {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "part_id", nullable = false)
+    private Long partId;
+
+    @Column(name = "part_type", nullable = false)
+    private String partType;
+
+    @Column(name = "performance_score", nullable = false)
+    private Integer performanceScore;
+
+    @Column(name = "tier_label", nullable = false)
+    private String tierLabel;
+
+    @Column(name = "score_version", nullable = false)
+    private String scoreVersion;
+
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
+}
+
+
+==================== FILE: recommendation-service\src\main\java\org\example\recommendationservice\repository\PartPerformanceMappingRepository.java ====================
+package org.example.recommendationservice.repository;
+
+import org.example.recommendationservice.model.PartPerformanceMapping;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface PartPerformanceMappingRepository extends JpaRepository<PartPerformanceMapping, Long> {
+    Optional<PartPerformanceMapping> findFirstByPartTypeAndPartIdAndScoreVersion(String partType, Long partId, String scoreVersion);
+}
+
+
+

@@ -220,13 +220,15 @@ export default function PostDetailsPage() {
 
   return (
     <div className="post-details-page">
-      <header className="topbar">
-        <div className="logo" onClick={() => navigate("/")}>KZPCCRAFT</div>
-        <nav className="topnav">
-          <span onClick={() => navigate("/discover")}>Discovery</span>
+      <header className="site-topbar">
+        <div className="site-brand" onClick={() => navigate("/")}>KazPcCraft</div>
+        <nav className="site-nav">
+          <span onClick={() => navigate("/")}>Home</span>
+          <span className="active" onClick={() => navigate("/discover")}>Discover</span>
           <span onClick={() => navigate("/build")}>Builder</span>
+          <span onClick={() => navigate("/profile")}>Profile</span>
         </nav>
-        <div className="profile-link" onClick={() => navigate(session ? "/profile" : "/auth")}>{session ? "Profile" : "Sign in"}</div>
+        <div className="site-nav-action" onClick={() => navigate(session ? "/profile" : "/auth")}>{session ? "Profile" : "Sign in"}</div>
       </header>
 
       <main className="post-details-layout">

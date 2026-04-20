@@ -30,6 +30,64 @@ body{
   background-repeat: no-repeat;
  
 }
+
+.site-topbar {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 22px;
+  background: rgba(5, 10, 13, 0.86);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.site-brand {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.site-nav {
+  display: flex;
+  gap: 22px;
+  color: #a4b7c2;
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.site-nav span {
+  cursor: pointer;
+}
+
+.site-nav span:hover,
+.site-nav span.active {
+  color: #5ee7ff;
+}
+
+.site-nav-action {
+  color: #d7e1e7;
+  font-weight: 800;
+  cursor: pointer;
+  margin-left: 22px;
+}
+
+.site-nav-action:hover {
+  color: #5ee7ff;
+}
+
+@media (max-width: 960px) {
+  .site-topbar {
+    padding: 0 14px;
+  }
+
+  .site-nav {
+    gap: 12px;
+    font-size: 13px;
+  }
+}
+
 header{
   display: flex;
   justify-content: space-between;
@@ -120,9 +178,6 @@ header{
 .home-shell {
   min-height: 100vh;
   background-color: #07161c;
-  background-image: url(../png/aksesori-pc-gaming1.png);
-  background-size: cover;
-  background-repeat: no-repeat;
   color: #f4f8fb;
 }
 

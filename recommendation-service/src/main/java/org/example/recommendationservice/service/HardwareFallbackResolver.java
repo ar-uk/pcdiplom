@@ -99,13 +99,31 @@ public class HardwareFallbackResolver {
             return new ResolvedValue<>(normalized, false);
         }
 
-        String normalizedName = normalize(gpuName);
-        for (Map.Entry<String, Integer> entry : GPU_WATTAGE_LOOKUP.entrySet()) {
-            if (normalizedName.contains(entry.getKey())) {
-                return new ResolvedValue<>(entry.getValue(), true);
-            }
+        String name = normalize(gpuName).replace(" ", "");
+
+        if (name.contains("5090") || name.contains("4090") || name.contains("7900xtx")) {
+            return new ResolvedValue<>(420, true);
         }
-        return new ResolvedValue<>(extractGpuWattage(gpuName), true);
+        if (name.contains("5080") || name.contains("4080") || name.contains("7900xt") || name.contains("7800xt")) {
+            return new ResolvedValue<>(320, true);
+        }
+        if (name.contains("5070ti") || name.contains("4070ti")) {
+            return new ResolvedValue<>(285, true);
+        }
+        if (name.contains("5070") || name.contains("4070super") || name.contains("4070") || name.contains("7700xt")) {
+            return new ResolvedValue<>(245, true);
+        }
+        if (name.contains("4060ti")) {
+            return new ResolvedValue<>(160, true);
+        }
+        if (name.contains("5060") || name.contains("4060") || name.contains("7600")) {
+            return new ResolvedValue<>(165, true);
+        }
+        if (name.contains("3060") || name.contains("3050") || name.contains("6600")) {
+            return new ResolvedValue<>(130, true);
+        }
+
+        return new ResolvedValue<>(170, true);
     }
 
     public ResolvedValue<String> resolveCpuTierLabel(String cpuName) {
@@ -127,19 +145,27 @@ public class HardwareFallbackResolver {
 
     public ResolvedValue<String> resolveGpuTierLabel(String gpuName) {
         String normalized = normalize(gpuName);
-        if (normalized.contains("5090") || normalized.contains("4090") || normalized.contains("7900 xtx")) {
+        String compact = normalized.replace(" ", "");
+        if (compact.contains("5090") || compact.contains("4090") || compact.contains("7900xtx")) {
             return new ResolvedValue<>("enthusiast", true);
         }
-        if (normalized.contains("5080") || normalized.contains("4080") || normalized.contains("7900 xt") || normalized.contains("7800 xt")) {
+        if (compact.contains("5080") || compact.contains("4080")
+                || compact.contains("7900xt") || compact.contains("7800xt")
+                || compact.contains("5070ti") || compact.contains("4070ti")) {
             return new ResolvedValue<>("high", true);
         }
-        if (normalized.contains("5070") || normalized.contains("4070") || normalized.contains("7700")) {
+        if (compact.contains("5070") || compact.contains("4070super")
+                || compact.contains("4070") || compact.contains("7700xt")
+                || compact.contains("7700")) {
             return new ResolvedValue<>("mid_high", true);
         }
-        if (normalized.contains("5060") || normalized.contains("4060") || normalized.contains("7600")) {
+        if (compact.contains("5060") || compact.contains("4060ti")
+                || compact.contains("4060") || compact.contains("7600xt")
+                || compact.contains("7600")) {
             return new ResolvedValue<>("mid", true);
         }
-        if (normalized.contains("3060") || normalized.contains("3050") || normalized.contains("6600") || normalized.contains("6650")) {
+        if (compact.contains("3060") || compact.contains("3050")
+                || compact.contains("6600") || compact.contains("6650")) {
             return new ResolvedValue<>("low_mid", true);
         }
         return new ResolvedValue<>("entry", true);

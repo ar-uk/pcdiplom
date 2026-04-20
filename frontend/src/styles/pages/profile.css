@@ -56,7 +56,7 @@
   display: flex;
   gap: 12px;
   padding: 38px 0 16px;
-  height: calc(100vh - 44px);
+  height: calc(100vh - 58px);
   overflow: hidden;
 }
 
@@ -67,9 +67,9 @@
   gap: 10px;
 }
 
-.profile-page .side-empty,
 .profile-page .build-panel {
-  background: linear-gradient(180deg, rgba(74, 135, 160, 0.72) 0%, #07161c00 100%);
+  background: rgba(8, 18, 23, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
 }
 
@@ -174,11 +174,6 @@
   align-self: end;
 }
 
-.profile-page .side-empty {
-  flex: 1;
-  min-height: 320px;
-}
-
 .profile-page .build-panel {
   flex: 1;
   padding: 10px 14px 14px;
@@ -186,28 +181,12 @@
   overflow: hidden;
 }
 
-.profile-page .tabs span {
-  margin: 10px 17px;
-  align-items: center;
-  color: rgb(199, 199, 199);
-  font-weight: 700;
+.profile-page .panel-head {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 16px;
-}
-
-.profile-page .tabs span:hover {
-  color: #ffffff;
-  transition: color 0.1s ease-in-out;
-  cursor: pointer;
-}
-
-.profile-page .search-bar {
-  margin-left: auto;
-  width: 260px;
-  height: 18px;
-  border-radius: 999px;
-  background: rgba(27, 61, 75, 0.9);
+  gap: 10px;
+  margin: 8px 0 12px;
 }
 
 .profile-page .new-build-btn {

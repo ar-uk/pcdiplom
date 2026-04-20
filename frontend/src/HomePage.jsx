@@ -5,17 +5,28 @@ import { loadSession } from "./lib/session.js";
 export default function HomePage() {
   const navigate = useNavigate();
   const [session] = useState(() => loadSession());
+  const [prompt, setPrompt] = useState("");
+
+  const handleGenerate = () => {
+    const trimmed = prompt.trim();
+    if (!trimmed) {
+      navigate("/ai-builder");
+      return;
+    }
+    navigate("/ai-builder", { state: { prompt: trimmed } });
+  };
 
   return (
     <div className="home-shell">
-      <header>
-        <div className="logo" onClick={() => navigate("/")}><p>PCPartPicker</p></div>
-        <nav className="menu">
-          <p onClick={() => navigate("/discover")}>Discover</p>
-          <p>Guides</p>
-          <p onClick={() => navigate("/build")}>Builder</p>
+      <header className="site-topbar">
+        <div className="site-brand" onClick={() => navigate("/")}>KazPcCraft</div>
+        <nav className="site-nav">
+          <span className="active" onClick={() => navigate("/")}>Home</span>
+          <span onClick={() => navigate("/discover")}>Discover</span>
+          <span onClick={() => navigate("/build")}>Builder</span>
+          <span onClick={() => navigate("/profile")}>Profile</span>
         </nav>
-        <div className="profile" onClick={() => navigate(session ? "/profile" : "/auth")}><p>{session ? "Profile" : "Sign In"}</p></div>
+        <div className="site-nav-action" onClick={() => navigate(session ? "/profile" : "/auth")}>{session ? "Profile" : "Sign in"}</div>
       </header>
 
       <main className="content">
@@ -26,9 +37,16 @@ export default function HomePage() {
         <div className="AI">
           <input
             type="text"
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                handleGenerate();
+              }
+            }}
             placeholder="Write your prompt here. Keep it simple!(Ex. under 200000 KZT, Full White, )"
           />
-          <button type="button"><span>Generate</span></button>
+          <button type="button" onClick={handleGenerate}><span>Generate</span></button>
         </div>
       </main>
     </div>

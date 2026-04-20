@@ -9,7 +9,6 @@ import org.example.pcbuilder.authservice.dto.TokenRequest;
 import org.example.pcbuilder.authservice.dto.TokenResponse;
 import org.example.pcbuilder.authservice.dto.TwoFactorChallengeResponse;
 import org.example.pcbuilder.authservice.dto.TwoFactorVerifyRequest;
-import org.example.pcbuilder.authservice.model.Role;
 import org.example.pcbuilder.authservice.service.JwtTokenService;
 import org.example.pcbuilder.authservice.service.MailService;
 import org.example.pcbuilder.authservice.service.TwoFactorService;

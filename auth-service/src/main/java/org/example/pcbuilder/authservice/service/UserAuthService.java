@@ -1,6 +1,7 @@
 package org.example.pcbuilder.authservice.service;
 
 import java.util.Optional;
+
 import org.example.pcbuilder.authservice.model.Role;
 import org.example.pcbuilder.authservice.model.UserAccount;
 import org.example.pcbuilder.authservice.repository.UserAccountRepository;
