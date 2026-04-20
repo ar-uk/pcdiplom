@@ -10,10 +10,12 @@ services:
     build:
       context: ./partService
     container_name: pc-part-service
+    env_file:
+      - ./.env
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-host.docker.internal}:${DB_PORT:-5432}/${PART_DB_NAME:-pcbuilder}
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-admin}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       eureka-server:
@@ -23,10 +25,13 @@ services:
     build:
       context: ./recommendation-service
     container_name: pc-recommendation-service
+    env_file:
+      - ./.env
+      - ./recommendation-service/.env
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-host.docker.internal}:${DB_PORT:-5432}/${RECOMMENDATION_DB_NAME:-pcbuilder}
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-admin}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       PART_SERVICE_URL: http://part-service:8081
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -41,11 +46,12 @@ services:
       context: ./auth-service
     container_name: pc-auth-service
     env_file:
+      - ./.env
       - ./auth-service/.env
     environment:
       DB_URL: jdbc:postgresql://${DB_HOST:-host.docker.internal}:${DB_PORT:-5432}/${AUTH_DB_NAME:-userpc}
-      DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-admin}
+      DB_USERNAME: ${DB_USERNAME:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       eureka-server:
@@ -55,10 +61,12 @@ services:
     build:
       context: ./community-service
     container_name: pc-community-service
+    env_file:
+      - ./.env
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-host.docker.internal}:${DB_PORT:-5432}/${COMMUNITY_DB_NAME:-communityDb}
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-admin}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
     depends_on:
       eureka-server:
@@ -70,6 +78,8 @@ services:
     container_name: pc-api-gateway
     ports:
       - "8080:8080"
+    env_file:
+      - ./.env
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       RECOMMENDATION_SERVICE_URL: http://recommendation-service:8084
@@ -77,7 +87,7 @@ services:
       COMMUNITY_SERVICE_URL: http://community-service:8083
       AUTH_SERVICE_URL: http://auth-service:8082
       AUTH_VALIDATE_URL: http://auth-service:8082/auth/validate
-      SECURITY_JWT_SECRET: ${JWT_SECRET:-your-very-long-jwt-signing-secret-key-please-change-it}
+      SECURITY_JWT_SECRET: ${JWT_SECRET:-}
     depends_on:
       eureka-server:
         condition: service_started
