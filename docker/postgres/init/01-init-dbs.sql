@@ -1,0 +1,3 @@
+CREATE DATABASE pcbuilder;
+CREATE DATABASE communityDb;
+CREATE DATABASE userpc;

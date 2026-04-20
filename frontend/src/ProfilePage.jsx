@@ -53,17 +53,33 @@ export default function ProfilePage() {
         return;
       }
 
+      if (!session?.token) {
+        if (!alive) return;
+        setBuilds([]);
+        setBuildsError("Session expired. Please sign in again.");
+        navigate("/auth");
+        return;
+      }
+
       setBuildsLoading(true);
       setBuildsError("");
 
       try {
         const response = await fetch(`/api/recommendation/manual-builds?userId=${encodeURIComponent(session.email)}`, {
-          headers: session?.token
-            ? {
-              Authorization: `Bearer ${session.token}`,
-            }
-            : undefined,
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+          },
         });
+
+        if (response.status === 401) {
+          if (!alive) return;
+          clearSession();
+          setSession(null);
+          setBuilds([]);
+          setBuildsError("Session expired. Please sign in again.");
+          navigate("/auth");
+          return;
+        }
 
         if (!response.ok) {
           const text = await response.text();
@@ -86,7 +102,7 @@ export default function ProfilePage() {
     return () => {
       alive = false;
     };
-  }, [session?.email, session?.token]);
+  }, [session?.email, session?.token, navigate]);
 
   useEffect(() => {
     let alive = true;
@@ -310,16 +326,15 @@ export default function ProfilePage() {
 
   return (
     <div className="profile-page">
-      <header className="topbar">
-        <div className="logo">KazPcCraft</div>
-        <nav className="menu">
+      <header className="site-topbar">
+        <div className="site-brand" onClick={() => navigate("/")}>KazPcCraft</div>
+        <nav className="site-nav">
+          <span onClick={() => navigate("/")}>Home</span>
           <span onClick={() => navigate("/discover")}>Discover</span>
-          <span>Guides</span>
           <span onClick={() => navigate("/build")}>Builder</span>
+          <span className="active" onClick={() => navigate("/profile")}>Profile</span>
         </nav>
-        <div className="profile-link" onClick={handleLogout}>
-          {session ? "Logout" : "Profile"}
-        </div>
+        <div className="site-nav-action" onClick={handleLogout}>{session ? "Logout" : "Profile"}</div>
       </header>
 
       <main className="profile-layout">
@@ -374,21 +389,12 @@ export default function ProfilePage() {
             </form>
           ) : null}
 
-          <div className="side-empty" />
         </aside>
 
         <section className="build-panel">
-          <div className="tabs">
-            <span>Favorites</span>
-            <span>Your Work</span>
-            <span>WishList</span>
-            <span>BlackList</span>
-            <div className="search-bar" />
-            <button
-              type="button"
-              className="new-build-btn"
-              onClick={() => navigate("/build")}
-            >
+          <div className="panel-head">
+            <div className="community-posts-head">Your builds</div>
+            <button type="button" className="new-build-btn" onClick={() => navigate("/build")}>
               New Build
             </button>
           </div>

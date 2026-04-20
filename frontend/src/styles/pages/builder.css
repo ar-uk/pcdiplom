@@ -1,0 +1,19 @@
+@import "../../Build.css";
+
+.builder-page {
+  min-height: 100vh;
+  background-color: #07161c;
+  background-image: url("../../png/aksesori-pc-gaming1.png");
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
+  color: #f4f8fb;
+}
+
+/* Keep content readable over the main-page artwork. */
+.builder-page .catalog-panel,
+.builder-page .workspace,
+.builder-page .case-frame,
+.builder-page .workspace-parts-box {
+  backdrop-filter: blur(4px);
+}

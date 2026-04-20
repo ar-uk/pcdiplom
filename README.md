@@ -77,3 +77,29 @@ Invoke-RestMethod -Method Post -Uri "http://localhost:8080/auth/token" -ContentT
 $token = "<paste-token>"
 Invoke-RestMethod -Method Get -Uri "http://localhost:8080/community/ping" -Headers @{ Authorization = "Bearer $token" }
 ```
+
+## Docker quick start (teammate-friendly)
+
+From the workspace root:
+
+```powershell
+docker compose up --build
+```
+
+Then open:
+
+- Frontend: `http://localhost:5173`
+- API gateway: `http://localhost:8080`
+- Eureka dashboard: `http://localhost:8761`
+
+Stop all containers:
+
+```powershell
+docker compose down
+```
+
+Reset DB data (fresh state):
+
+```powershell
+docker compose down -v
+```

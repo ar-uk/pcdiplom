@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { loadSession } from "./lib/session.js";
-import "./Build.css";
+import "./styles/pages/builder.css";
 
 const CATEGORIES = [
   { key: "cpu", label: "CPU", endpoint: "/api/parsed/cpu" },
@@ -820,6 +820,12 @@ export default function BuilderPage() {
         }),
       });
 
+      if (createDraftResponse.status === 401) {
+        alert("Session expired. Please sign in again.");
+        navigate("/auth");
+        return;
+      }
+
       if (!createDraftResponse.ok) {
         const text = await createDraftResponse.text();
         throw new Error(text || `Failed to create build draft (${createDraftResponse.status})`);
@@ -849,6 +855,12 @@ export default function BuilderPage() {
           }),
         });
 
+        if (patchResponse.status === 401) {
+          alert("Session expired. Please sign in again.");
+          navigate("/auth");
+          return;
+        }
+
         if (!patchResponse.ok) {
           const text = await patchResponse.text();
           throw new Error(text || `Failed to save draft part (${patchResponse.status})`);
@@ -870,6 +882,12 @@ export default function BuilderPage() {
         }),
       });
 
+      if (finalizeResponse.status === 401) {
+        alert("Session expired. Please sign in again.");
+        navigate("/auth");
+        return;
+      }
+
       if (!finalizeResponse.ok) {
         const text = await finalizeResponse.text();
         throw new Error(text || `Failed to finalize draft (${finalizeResponse.status})`);
@@ -888,9 +906,9 @@ export default function BuilderPage() {
         <div className="logo" onClick={() => navigate("/")}>KZPCCRAFT</div>
 
         <nav className="topnav">
-          <span onClick={() => navigate("/discover")}>Discovery</span>
+          <span onClick={() => navigate("/")}>Home</span>
+          <span onClick={() => navigate("/discover")}>Discover</span>
           <span className="nav-active">Builder</span>
-          <span>Guides</span>
         </nav>
 
         <div className="profile-link" onClick={() => navigate(session ? "/profile" : "/auth")}>
