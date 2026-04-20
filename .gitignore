@@ -5,3 +5,9 @@
 **/build/
 **/out/
 *.iml
+*.env
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
