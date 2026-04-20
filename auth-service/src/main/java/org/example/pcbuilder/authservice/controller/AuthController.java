@@ -68,8 +68,12 @@ public class AuthController {
         }
 
         if (authenticatedUser.get().isVerified()) {
-            TwoFactorChallengeResponse challengeResponse = twoFactorService.createChallenge(authenticatedUser.get());
-            return ResponseEntity.status(202).body(challengeResponse);
+            try {
+                TwoFactorChallengeResponse challengeResponse = twoFactorService.createChallenge(authenticatedUser.get());
+                return ResponseEntity.status(202).body(challengeResponse);
+            } catch (IllegalStateException exception) {
+                return ResponseEntity.status(502).body(new ErrorResponse(exception.getMessage()));
+            }
         }
 
         String username = authenticatedUser.get().getUsername();
@@ -133,15 +137,25 @@ public class AuthController {
 
     @PostMapping("/2fa/enable")
     public ResponseEntity<?> enableTwoFactor(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
-        String token = extractBearerToken(authorizationHeader);
+        String token;
+        try {
+            token = extractBearerToken(authorizationHeader);
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.status(401).body(new ErrorResponse(exception.getMessage()));
+        }
+
         String email = jwtTokenService.extractSubject(token);
         var user = userAuthService.findByEmail(email);
         if (user.isEmpty()) {
             return ResponseEntity.status(404).body(new ErrorResponse("User not found"));
         }
 
-        TwoFactorChallengeResponse challengeResponse = twoFactorService.createEnableChallenge(user.get());
-        return ResponseEntity.status(202).body(challengeResponse);
+        try {
+            TwoFactorChallengeResponse challengeResponse = twoFactorService.createEnableChallenge(user.get());
+            return ResponseEntity.status(202).body(challengeResponse);
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.status(502).body(new ErrorResponse(exception.getMessage()));
+        }
     }
 
     @PostMapping("/2fa/enable/confirm")
@@ -161,7 +175,13 @@ public class AuthController {
 
     @PostMapping("/2fa/disable")
     public ResponseEntity<?> disableTwoFactor(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
-        String token = extractBearerToken(authorizationHeader);
+        String token;
+        try {
+            token = extractBearerToken(authorizationHeader);
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.status(401).body(new ErrorResponse(exception.getMessage()));
+        }
+
         String email = jwtTokenService.extractSubject(token);
         var updatedUser = userAuthService.setTwoFactorEnabled(email, false);
         if (updatedUser.isEmpty()) {

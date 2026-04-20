@@ -40,16 +40,13 @@ services:
     build:
       context: ./auth-service
     container_name: pc-auth-service
+    env_file:
+      - ./auth-service/.env
     environment:
       DB_URL: jdbc:postgresql://${DB_HOST:-host.docker.internal}:${DB_PORT:-5432}/${AUTH_DB_NAME:-userpc}
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-admin}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
-      JWT_SECRET: ${JWT_SECRET:-your-very-long-jwt-signing-secret-key-please-change-it}
-      JWT_EXPIRATION_MILLIS: 3600000
-      MAIL_USERNAME: ${MAIL_USERNAME:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      MAIL_FROM: ${MAIL_FROM:-}
     depends_on:
       eureka-server:
         condition: service_started
