@@ -17,7 +17,9 @@ public record BuildResponse(
     public record RequirementsDto(
             BigDecimal budgetKzt,
             String useCase,
-            String targetResolution,
+            WorkloadType workloadType,
+            ResolutionTarget resolutionTarget,
+            Integer refreshRateHz,
             List<String> priorities,
             ConstraintsDto constraints,
             String market,

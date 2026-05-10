@@ -18,16 +18,7 @@ public class PcCaseController {
 
     private final PcCaseService pcCaseService;
 
-    /**
-     * GET /api/case
-     * Optional query params:
-     *   name, minPrice, maxPrice, caseType, color, sidePanel,
-     *   page, size, sort
-     *
-     * Examples:
-     *   /api/case?caseType=ATX&sidePanel=Tempered+Glass
-     *   /api/case?color=black&maxPrice=80&sort=priceUsd,asc
-     */
+
     @GetMapping
     public Page<PcCase> getAll(
             @RequestParam(required = false) String name,

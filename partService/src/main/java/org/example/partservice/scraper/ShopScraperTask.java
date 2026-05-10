@@ -64,6 +64,21 @@ public class ShopScraperTask {
         scrapeAllowlistFromShop(null, null);
     }
 
+    /**
+     * Scrape using search strategies from search-strategies.json configuration.
+     * This approach is more flexible than allowlist-based scraping and allows
+     * you to define budget ranges, multiple search queries per part type, etc.
+     */
+    public void scrapeUsingSearchStrategies() {
+        try {
+            System.out.println("[SHOP SCRAPER] Starting search strategy-based scrape...");
+            shopScraperService.scrapeUsingStrategies();
+        } catch (Exception e) {
+            System.err.println("[SHOP SCRAPER] Fatal error during strategy-based scrape: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
     private String canonicalPartType(String partType) {
         if (partType == null || partType.isBlank()) {
             return "";

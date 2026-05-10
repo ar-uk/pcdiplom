@@ -1,51 +1,25 @@
 package org.example.recommendationservice.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import lombok.RequiredArgsConstructor;
+import org.example.recommendationservice.model.CpuBenchmark;
+import org.example.recommendationservice.model.GpuBenchmark;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Locale;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
+@RequiredArgsConstructor
 public class HardwareFallbackResolver {
-
-    private static final BigDecimal USD_TO_KZT = new BigDecimal("455");
 
     private static final Pattern CPU_QUERY_PATTERN = Pattern.compile("(?i)(ryzen\\s+[3579]\\s+\\d{4}x?|ryzen\\s+[3579]\\s+\\d{4}|core\\s+i[3579]-?\\d{4,5}f?|i[3579]-?\\d{4,5}f?)");
     private static final Pattern GPU_QUERY_PATTERN = Pattern.compile("(?i)(rtx\\s*\\d{3,4}(?:\\s*ti)?|rx\\s*\\d{3,4}(?:\\s*xt)?|arc\\s*\\w+)");
 
-    private static final Pattern CPU_NAME_PATTERN = Pattern.compile("(?i)(ryzen\\s+[3579]\\s+\\d{4}x?|ryzen\\s+[3579]\\s+\\d{4}|core\\s+i[3579]-?\\d{4,5}f?|i[3579]-?\\d{4,5}f?)");
-    private static final Pattern GPU_NAME_PATTERN = Pattern.compile("(?i)(rtx\\s*\\d{3,4}(?:\\s*ti)?|rx\\s*\\d{3,4}(?:\\s*xt)?|arc\\s*\\w+)");
-
-    private static final Map<String, Integer> CPU_WATTAGE_LOOKUP = Map.ofEntries(
-            Map.entry("ryzen 5 7600", 88),
-            Map.entry("ryzen 7 7700", 88),
-            Map.entry("ryzen 7 7800x3d", 120),
-            Map.entry("ryzen 9 7900", 170),
-            Map.entry("core i5 13400", 148),
-            Map.entry("core i5 13600", 181),
-            Map.entry("core i7 13700", 253),
-            Map.entry("core i7 14700", 253),
-            Map.entry("core i9 14900", 253)
-    );
-
-    private static final Map<String, Integer> GPU_WATTAGE_LOOKUP = Map.ofEntries(
-            Map.entry("rtx 4060", 115),
-            Map.entry("rtx 4060 ti", 160),
-            Map.entry("rtx 4070", 200),
-            Map.entry("rtx 4070 super", 220),
-            Map.entry("rtx 4080", 320),
-            Map.entry("rtx 4090", 450),
-            Map.entry("rx 7600", 165),
-            Map.entry("rx 7700 xt", 245),
-            Map.entry("rx 7800 xt", 263),
-            Map.entry("rx 7900 xt", 315),
-            Map.entry("rx 7900 xtx", 355)
-    );
+    private final CpuBenchmarkService cpuBenchmarkService;
+    private final GpuBenchmarkService gpuBenchmarkService;
+    private final PartMetadataService partMetadataService;
 
     public ResolvedValue<String> resolveCpuSocket(String normalizedSocket, String cpuName) {
         if (normalizedSocket != null && !normalizedSocket.isBlank()) {
@@ -84,11 +58,19 @@ public class HardwareFallbackResolver {
             return new ResolvedValue<>(normalized, false);
         }
 
-        String normalizedName = normalize(cpuName);
-        for (Map.Entry<String, Integer> entry : CPU_WATTAGE_LOOKUP.entrySet()) {
-            if (normalizedName.contains(entry.getKey())) {
-                return new ResolvedValue<>(entry.getValue(), true);
-            }
+        Integer benchmarkWatts = cpuBenchmarkService.findByName(cpuName)
+                .map(CpuBenchmark::getTdpWatts)
+                .filter(value -> value != null && value > 0)
+                .orElse(null);
+        if (benchmarkWatts != null) {
+            return new ResolvedValue<>(benchmarkWatts, false);
+        }
+
+        Integer metadataWatts = partMetadataService.findTdpWatts("cpu", cpuName)
+                .filter(value -> value != null && value > 0)
+                .orElse(null);
+        if (metadataWatts != null) {
+            return new ResolvedValue<>(metadataWatts, false);
         }
         return new ResolvedValue<>(extractCpuWattage(cpuName), true);
     }
@@ -99,8 +81,22 @@ public class HardwareFallbackResolver {
             return new ResolvedValue<>(normalized, false);
         }
 
-        String name = normalize(gpuName).replace(" ", "");
+        Integer benchmarkWatts = gpuBenchmarkService.findByName(gpuName)
+                .map(GpuBenchmark::getTdpWatts)
+                .filter(value -> value != null && value > 0)
+                .orElse(null);
+        if (benchmarkWatts != null) {
+            return new ResolvedValue<>(benchmarkWatts, false);
+        }
 
+        Integer metadataWatts = partMetadataService.findTdpWatts("gpu", gpuName)
+                .filter(value -> value != null && value > 0)
+                .orElse(null);
+        if (metadataWatts != null) {
+            return new ResolvedValue<>(metadataWatts, false);
+        }
+
+        String name = normalize(gpuName).replace(" ", "");
         if (name.contains("5090") || name.contains("4090") || name.contains("7900xtx")) {
             return new ResolvedValue<>(420, true);
         }
@@ -237,41 +233,6 @@ public class HardwareFallbackResolver {
             return 95;
         }
         return 65;
-    }
-
-    private int extractGpuWattage(String text) {
-        String normalized = normalize(text);
-        int code = extractFirstInt(normalized, 0);
-        if (normalized.contains("4090") || normalized.contains("5090") || normalized.contains("7900 xtx")) {
-            return 420;
-        }
-        if (normalized.contains("4080") || normalized.contains("5080") || normalized.contains("7900 xt") || normalized.contains("7800 xt")) {
-            return 320;
-        }
-        if (normalized.contains("4070") || normalized.contains("5070") || normalized.contains("7700")) {
-            return 250;
-        }
-        if (normalized.contains("4060") || normalized.contains("5060") || normalized.contains("7600")) {
-            return 190;
-        }
-        if (code >= 3000) {
-            return 170;
-        }
-        return 120;
-    }
-
-    private Integer extractFirstInt(String text, int fallback) {
-        if (text == null) {
-            return fallback;
-        }
-        Matcher matcher = Pattern.compile("(\\d{2,4})").matcher(text);
-        if (matcher.find()) {
-            try {
-                return Integer.parseInt(matcher.group(1));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return fallback;
     }
 
     public record ResolvedValue<T>(T value, boolean fallbackUsed) {
