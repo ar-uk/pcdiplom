@@ -9,7 +9,11 @@ import org.example.recommendationservice.dto.BuildResponse;
 import org.example.recommendationservice.dto.ChatRequest;
 import org.example.recommendationservice.dto.RecommendationEvaluationRequest;
 import org.example.recommendationservice.dto.RecommendationEvaluationResponse;
+import org.example.recommendationservice.dto.ResolutionTarget;
+import org.example.recommendationservice.dto.WorkloadType;
 import org.example.recommendationservice.model.AiSavedBuild;
+import org.example.recommendationservice.model.CpuBenchmark;
+import org.example.recommendationservice.model.GpuBenchmark;
 import org.example.recommendationservice.model.PartPerformanceMapping;
 import org.example.recommendationservice.repository.AiSavedBuildRepository;
 import org.example.recommendationservice.repository.PartPerformanceMappingRepository;
@@ -20,15 +24,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.EnumMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -41,36 +40,9 @@ public class FreshBuildRecommendationService {
     private static final String SCORE_VERSION = "v1.0-internal-kz";
 
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(\\d{2,7}(?:\\.\\d+)?)");
-    private static final Pattern CPU_QUERY_PATTERN = Pattern.compile("(?i)(ryzen\\s+[3579]\\s+\\d{4}x?|ryzen\\s+[3579]\\s+\\d{4}|core\\s+i[3579]-?\\d{4,5}f?|i[3579]-?\\d{4,5}f?)");
-    private static final Pattern GPU_QUERY_PATTERN = Pattern.compile("(?i)(rtx\\s*\\d{3,4}(?:\\s*ti)?|rx\\s*\\d{3,4}(?:\\s*xt)?|arc\\s*\\w+)");
-        private static final Pattern EXPLICIT_KZT_PATTERN = Pattern.compile("(?i)(\\d{2,3}(?:[\\s,]\\d{3})+|\\d{5,7})\\s*(kzt|тенге|₸)");
-        private static final Pattern EXPLICIT_USD_PATTERN = Pattern.compile("(?i)(\\d{2,5}(?:[\\s,]\\d{3})*|\\d{2,5})\\s*(usd|dollar|\\$)");
-
-        private static final Map<String, Integer> CPU_WATTAGE_LOOKUP = Map.ofEntries(
-            Map.entry("ryzen 5 7600", 88),
-            Map.entry("ryzen 7 7700", 88),
-            Map.entry("ryzen 7 7800x3d", 120),
-            Map.entry("ryzen 9 7900", 170),
-            Map.entry("core i5 13400", 148),
-            Map.entry("core i5 13600", 181),
-            Map.entry("core i7 13700", 253),
-            Map.entry("core i7 14700", 253),
-            Map.entry("core i9 14900", 253)
-        );
-
-        private static final Map<String, Integer> GPU_WATTAGE_LOOKUP = Map.ofEntries(
-            Map.entry("rtx 4060", 115),
-            Map.entry("rtx 4060 ti", 160),
-            Map.entry("rtx 4070", 200),
-            Map.entry("rtx 4070 super", 220),
-            Map.entry("rtx 4080", 320),
-            Map.entry("rtx 4090", 450),
-            Map.entry("rx 7600", 165),
-            Map.entry("rx 7700 xt", 245),
-            Map.entry("rx 7800 xt", 263),
-            Map.entry("rx 7900 xt", 315),
-            Map.entry("rx 7900 xtx", 355)
-        );
+    private static final Pattern EXPLICIT_KZT_PATTERN = Pattern.compile("(?i)(\\d{2,3}(?:[\\s,]\\d{3})+|\\d{5,7})\\s*(kzt|тенге|₸)");
+    private static final Pattern EXPLICIT_KZT_SCALED_PATTERN = Pattern.compile("(?i)(\\d{2,4}(?:\\.\\d+)?)\\s*(k|m|тыс|тысяч|млн)\\s*(kzt|тенге|₸|tenge)");
+    private static final Pattern EXPLICIT_USD_PATTERN = Pattern.compile("(?i)(\\d{2,5}(?:[\\s,]\\d{3})*|\\d{2,5})\\s*(usd|dollar|\\$)");
 
     private static final Map<String, VariantProfile> VARIANTS = Map.of(
             "best_value", new VariantProfile("best_value", new BigDecimal("0.35"), new BigDecimal("0.22"), 0.55, 0.25, 0.20),
@@ -81,11 +53,18 @@ public class FreshBuildRecommendationService {
     private final OpenAiProperties openAiProperties;
     private final ObjectMapper objectMapper;
     private final AiSavedBuildRepository aiSavedBuildRepository;
-        private final HardwareFallbackResolver hardwareFallbackResolver;
+    private final HardwareFallbackResolver hardwareFallbackResolver;
+    private final CpuBenchmarkService cpuBenchmarkService;
+    private final GpuBenchmarkService gpuBenchmarkService;
     private final PartPerformanceMappingRepository partPerformanceMappingRepository;
 
     @Value("${part-service.url}")
     private String partServiceUrl;
+
+    private static final Logger log = LoggerFactory.getLogger(FreshBuildRecommendationService.class);
+
+    @Value("${openai.enabled:false}")
+    private boolean openAiEnabled;
 
     private final RestClient restClient = RestClient.builder().build();
 
@@ -194,7 +173,8 @@ public class FreshBuildRecommendationService {
         long startedAt = System.currentTimeMillis();
         List<String> warnings = new ArrayList<>();
 
-        BuildResponse.RequirementsDto requirements = extractRequirements(prompt, currency, region, strictBudget);
+            BuildResponse.RequirementsDto requirements = extractRequirements(prompt, currency, region, strictBudget);
+        IntentScoringProfile intentProfile = buildIntentScoringProfile(requirements, prompt);
         BigDecimal budget = requirements.budgetKzt() == null || requirements.budgetKzt().signum() <= 0
                 ? DEFAULT_BUDGET
                 : requirements.budgetKzt();
@@ -202,12 +182,23 @@ public class FreshBuildRecommendationService {
 
         try {
             ComponentPools pools = loadComponentPools(prompt, requirements, warnings, fallbackUsageTracker);
+            log.info(
+                    "Session {}: component pools cpus={} gpus={} motherboards={} memories={} storages={} psus={} cases={} fieldInferenceFallbacks={}",
+                    sessionId,
+                    pools.cpus().size(),
+                    pools.gpus().size(),
+                    pools.motherboards().size(),
+                    pools.memories().size(),
+                    pools.storages().size(),
+                    pools.psus().size(),
+                    pools.cases().size(),
+                    pools.fallbackInferenceCount);
             List<VariantCandidate> builtVariants = new ArrayList<>();
             int candidateBuildsEvaluated = 0;
 
             for (String label : List.of("best_value", "best_performance", "balanced")) {
                 VariantProfile profile = VARIANTS.get(label);
-                VariantCandidate candidate = buildVariant(profile, pools, requirements, budget, strictBudget);
+                VariantCandidate candidate = buildVariant(profile, pools, requirements, budget, strictBudget, intentProfile);
                 if (candidate != null) {
                     builtVariants.add(candidate);
                     candidateBuildsEvaluated += candidate.evaluatedCount;
@@ -215,10 +206,11 @@ public class FreshBuildRecommendationService {
             }
 
             if (builtVariants.isEmpty() && strictBudget) {
+                log.warn("Session {}: strict budget filtered all candidate combinations; retrying without strict budget", sessionId);
                 warnings.add("Strict budget eliminated all technically compatible combinations; returning nearest compatible options above budget.");
                 for (String label : List.of("best_value", "best_performance", "balanced")) {
                     VariantProfile profile = VARIANTS.get(label);
-                    VariantCandidate candidate = buildVariant(profile, pools, requirements, budget, false);
+                    VariantCandidate candidate = buildVariant(profile, pools, requirements, budget, false, intentProfile);
                     if (candidate != null) {
                         builtVariants.add(candidate);
                         candidateBuildsEvaluated += candidate.evaluatedCount;
@@ -227,10 +219,32 @@ public class FreshBuildRecommendationService {
             }
 
             if (builtVariants.isEmpty()) {
-                warnings.add(diagnoseNoCandidateReason(pools, requirements, budget, strictBudget));
+                String reason = diagnoseNoCandidateReason(pools, requirements, budget, strictBudget);
+                warnings.add(reason);
+                log.error("Session {}: falling back to deterministic build. reason='{}' budget={} strictBudget={} requirements={} cpuPool={} gpuPool={} mbPool={} memPool={} psuPool={} casePool={} warnings={}",
+                        sessionId,
+                        reason,
+                        budget,
+                        strictBudget,
+                        requirements,
+                        pools.cpus().size(),
+                        pools.gpus().size(),
+                        pools.motherboards().size(),
+                        pools.memories().size(),
+                        pools.psus().size(),
+                        pools.cases().size(),
+                        warnings);
+
                 BuildResponse fallback = mockBuildResponse(sessionId, requirements, budgetBand, warnings, startedAt);
                 saveSnapshot(sessionId, userId, prompt, currency, region, strictBudget, requirements, fallback);
                 return fallback;
+            }
+
+            builtVariants.sort(Comparator.comparing(VariantCandidate::score).reversed());
+
+            if (!builtVariants.isEmpty()) {
+                VariantCandidate top = builtVariants.get(0);
+                log.info("Session {}: built {} variants, top candidate='{}' score={}", sessionId, builtVariants.size(), top.label, top.score);
             }
 
             List<BuildResponse.BuildVariantDto> top3 = builtVariants.stream()
@@ -242,7 +256,7 @@ public class FreshBuildRecommendationService {
                     .toList();
 
             int compatibleBuilds = (int) builtVariants.stream().filter(candidate -> Boolean.TRUE.equals(candidate.checks.compatibilityPassed())).count();
-            BuildResponse.ChecksDto aggregateChecks = aggregateChecks(builtVariants, pools.stockValidationTrusted);
+            BuildResponse.ChecksDto aggregateChecks = aggregateChecks(builtVariants);
             BigDecimal mappingCoverage = performanceMappingCoverage(top3);
             int effectiveFallbackCount = effectiveFallbackCount(top3);
 
@@ -255,9 +269,7 @@ public class FreshBuildRecommendationService {
             if (!Boolean.TRUE.equals(aggregateChecks.caseFitValidated())) {
                 warnings.add("Case fit validation is not enforced yet: normalized dimensions are missing for strict fit checks.");
             }
-            if (!Boolean.TRUE.equals(aggregateChecks.stockValidationEnforced())) {
-                warnings.add("Stock validation is not enforceable: parsed stock metadata is missing.");
-            }
+            // Stock validation removed: no stock-based warnings
             if ("low".equalsIgnoreCase(aggregateChecks.powerEstimateConfidence())) {
                 warnings.add("Power estimate confidence is low for one or more parts: normalized TDP values are missing.");
             }
@@ -298,14 +310,19 @@ public class FreshBuildRecommendationService {
 
     private ComponentPools loadComponentPools(String prompt, BuildResponse.RequirementsDto requirements, List<String> warnings, FallbackUsageTracker fallbackUsageTracker) {
         List<BuildResponse.PartDto> cpuParts = mergePartPools(
-            fetchParts("/api/parsed/cpu", 500, node -> toCpuPart(node, fallbackUsageTracker)),
-            fetchParts("/api/cpu", 500, node -> toCpuDbPart(node, fallbackUsageTracker))
+            fetchParts("/api/parsed/cpu", 500, node -> toCpuPart(node, fallbackUsageTracker, requirements.resolutionTarget())),
+            fetchParts("/api/reference/matched-cpu", 500, node -> toCpuMatchPart(node, fallbackUsageTracker, requirements.resolutionTarget()))
         );
-        List<BuildResponse.PartDto> gpuParts =
-            fetchParts("/api/parsed/video-card", 500, node -> toGpuPart(node, fallbackUsageTracker));
+        if (log.isDebugEnabled()) {
+            log.debug("raw cpuParts count={} sampleCpuNames={}", cpuParts.size(), cpuParts.stream().limit(8).map(BuildResponse.PartDto::name).toList());
+        }
+        List<BuildResponse.PartDto> gpuParts = mergePartPools(
+            fetchParts("/api/parsed/video-card", 500, node -> toGpuPart(node, fallbackUsageTracker, requirements.resolutionTarget())),
+            fetchParts("/api/reference/matched-gpu", 500, node -> toGpuMatchPart(node, fallbackUsageTracker, requirements.resolutionTarget()))
+        );
         List<BuildResponse.PartDto> motherboardParts = mergePartPools(
             fetchParts("/api/parsed/motherboard", 500, node -> toMotherboardPart(node, fallbackUsageTracker)),
-            fetchParts("/api/motherboard", 500, node -> toMotherboardDbPart(node, fallbackUsageTracker))
+            fetchParts("/api/reference/matched-motherboard", 500, node -> toMotherboardMatchPart(node, fallbackUsageTracker))
         );
         List<BuildResponse.PartDto> memoryParts = mergePartPools(
             fetchParts("/api/parsed/memory", 500, node -> toMemoryPart(node, fallbackUsageTracker)),
@@ -342,10 +359,18 @@ public class FreshBuildRecommendationService {
             warnings.add("GPU ranking uses inferred metadata from listing names because parsed GPU records are listing-based and not fully normalized.");
         }
 
-        boolean stockTrusted = cpu.trusted && gpu.trusted && motherboard.trusted && memory.trusted && storage.trusted && psu.trusted && pcCase.trusted;
-        if (Boolean.TRUE.equals(requirements.strictStockOnly()) && !stockTrusted) {
-            warnings.add("Stock metadata is unavailable in the parsed catalog, so strict in-stock filtering could not be enforced.");
+        if (filteredCpus.isEmpty() && !cpu.parts.isEmpty()) {
+            String brand = requirements.constraints() == null ? null : requirements.constraints().brandCpu();
+            log.debug("CPU filtering removed all candidates. cpuQuery='{}' brandFilter='{}' rawCount={} sampleRawNames={} ",
+                cpuQuery,
+                brand,
+                cpu.parts.size(),
+                cpu.parts.stream().limit(20).map(BuildResponse.PartDto::name).toList());
+            long matched = cpu.parts.stream().filter(p -> matchesQuery(p.name(), cpuQuery) && (brand == null || brand.isBlank() || normalize(p.name()).contains(normalize(brand)))).count();
+            log.debug("CPU matched count after query+brand filter = {}", matched);
         }
+
+        // Stock checking removed: do not enforce in-stock filtering
 
         return new ComponentPools(
                 filteredCpus.isEmpty() ? cpu.parts : filteredCpus,
@@ -355,9 +380,80 @@ public class FreshBuildRecommendationService {
                 storage.parts,
                 psu.parts,
                 pcCase.parts,
-            stockTrusted,
             fallbackUsageTracker.count()
         );
+    }
+
+    private Map<String, List<BuildResponse.PartDto>> indexMotherboardsBySocketToken(List<BuildResponse.PartDto> motherboards) {
+        Map<String, List<BuildResponse.PartDto>> map = new HashMap<>();
+        for (BuildResponse.PartDto mb : motherboards) {
+            Set<String> tokens = socketTokens(mb.socket());
+            if (tokens.isEmpty()) {
+                map.computeIfAbsent("", k -> new ArrayList<>()).add(mb);
+            } else {
+                for (String t : tokens) {
+                    map.computeIfAbsent(t, k -> new ArrayList<>()).add(mb);
+                }
+            }
+        }
+        return map;
+    }
+
+    private List<BuildResponse.PartDto> resolveMotherboardCandidates(
+            String cpuSocket,
+            Map<String, List<BuildResponse.PartDto>> motherboardsBySocketToken,
+            List<BuildResponse.PartDto> allMotherboards,
+            BuildResponse.RequirementsDto requirements,
+            BigDecimal budget,
+            VariantProfile profile,
+            IntentScoringProfile intentProfile
+    ) {
+        Set<String> cpuToks = socketTokens(cpuSocket);
+        Map<String, BuildResponse.PartDto> unique = new LinkedHashMap<>();
+        if (cpuToks.isEmpty()) {
+            for (BuildResponse.PartDto mb : allMotherboards) {
+                if (compatibleSocket(cpuSocket, mb.socket())) {
+                    unique.putIfAbsent(normalize(mb.name()), mb);
+                }
+            }
+        } else {
+            for (String t : cpuToks) {
+                for (BuildResponse.PartDto mb : motherboardsBySocketToken.getOrDefault(t, List.of())) {
+                    if (mb != null && mb.name() != null) {
+                        unique.putIfAbsent(normalize(mb.name()), mb);
+                    }
+                }
+            }
+            for (BuildResponse.PartDto mb : motherboardsBySocketToken.getOrDefault("", List.of())) {
+                if (compatibleSocket(cpuSocket, mb.socket())) {
+                    unique.putIfAbsent(normalize(mb.name()), mb);
+                }
+            }
+        }
+        return unique.values().stream()
+                .sorted(Comparator
+                        .comparingInt((BuildResponse.PartDto m) -> {
+                            int socketOk = m.socket() != null && !m.socket().isBlank() ? 0 : 1;
+                            int ddrOk = normalizeDdrLabel(m.memoryType()) != null ? 0 : 1;
+                            return socketOk * 2 + ddrOk;
+                        })
+                        .thenComparing((BuildResponse.PartDto part) -> partScore(part, "motherboard", requirements, targetBudgetForComponent(budget, "motherboard", intentProfile), profile, intentProfile), Comparator.reverseOrder()))
+                .limit(6)
+                .toList();
+    }
+
+    private List<BuildResponse.PartDto> filterGpusByVramFloor(List<BuildResponse.PartDto> gpus, int minVramWhenDetected) {
+        if (gpus == null || gpus.isEmpty() || minVramWhenDetected <= 0) {
+            return gpus;
+        }
+        List<BuildResponse.PartDto> kept = new ArrayList<>();
+        for (BuildResponse.PartDto gpu : gpus) {
+            int v = extractGpuVramGb(gpu.name());
+            if (v == 0 || v >= minVramWhenDetected) {
+                kept.add(gpu);
+            }
+        }
+        return kept;
     }
 
     private VariantCandidate buildVariant(
@@ -365,31 +461,67 @@ public class FreshBuildRecommendationService {
             ComponentPools pools,
             BuildResponse.RequirementsDto requirements,
             BigDecimal budget,
-            boolean strictBudget
+            boolean strictBudget,
+            IntentScoringProfile intentProfile
     ) {
-        List<BuildResponse.PartDto> rankedCpu = rankParts(pools.cpus, "cpu", requirements, budget.multiply(profile.cpuShare), profile);
-        List<BuildResponse.PartDto> rankedGpu = rankParts(pools.gpus, "gpu", requirements, budget.multiply(profile.gpuShare), profile);
+        List<BuildResponse.PartDto> rankedCpu = rankParts(pools.cpus, "cpu", requirements, targetBudgetForComponent(budget, "cpu", intentProfile), profile, intentProfile);
+        List<BuildResponse.PartDto> rankedGpu = rankParts(pools.gpus, "gpu", requirements, targetBudgetForComponent(budget, "gpu", intentProfile), profile, intentProfile);
+
+        GamingHardwareFloors gamingFloors = gamingHardwareFloors(requirements);
+        if (requirements.useCase() != null && "gaming".equalsIgnoreCase(requirements.useCase())) {
+            List<BuildResponse.PartDto> vramFiltered = filterGpusByVramFloor(rankedGpu, gamingFloors.minGpuVramGb());
+            if (!vramFiltered.isEmpty()) {
+                rankedGpu = vramFiltered;
+            }
+        }
+
+        List<BuildResponse.PartDto> storageCandidates = rankParts(pools.storages, "storage", requirements, targetBudgetForComponent(budget, "storage", intentProfile), profile, intentProfile)
+                .stream()
+                .limit(3)
+                .toList();
+        List<BuildResponse.PartDto> pcCaseCandidates = rankParts(pools.cases, "pcCase", requirements, targetBudgetForComponent(budget, "pcCase", intentProfile), profile, intentProfile)
+                .stream()
+                .limit(3)
+                .toList();
+        if (storageCandidates.isEmpty() || pcCaseCandidates.isEmpty()) {
+            return null;
+        }
+
+        Map<String, List<BuildResponse.PartDto>> motherboardsBySocketToken = indexMotherboardsBySocketToken(pools.motherboards);
+
+        List<BuildResponse.PartDto> cpus = rankedCpu.stream().limit(8).toList();
+        List<BuildResponse.PartDto> gpus = rankedGpu.stream().limit(10).toList();
 
         int evaluated = 0;
         VariantCandidate best = null;
 
-        for (BuildResponse.PartDto cpu : rankedCpu.stream().limit(8).toList()) {
+        for (BuildResponse.PartDto cpu : cpus) {
             String cpuSocket = cpu.socket();
             Tier cpuTier = tierOf(cpu);
 
-            List<BuildResponse.PartDto> motherboardCandidates = pools.motherboards.stream()
-                    .filter(motherboard -> compatibleSocket(cpuSocket, motherboard.socket()))
-                    .sorted(Comparator.comparing((BuildResponse.PartDto part) -> partScore(part, "motherboard", requirements, budget.multiply(new BigDecimal("0.12")), profile)).reversed())
-                    .limit(6)
-                    .toList();
+            List<BuildResponse.PartDto> motherboardCandidates = resolveMotherboardCandidates(
+                    cpuSocket,
+                    motherboardsBySocketToken,
+                    pools.motherboards,
+                    requirements,
+                    budget,
+                    profile,
+                    intentProfile);
 
             if (motherboardCandidates.isEmpty()) {
                 continue;
             }
 
-            for (BuildResponse.PartDto gpu : rankedGpu.stream().limit(10).toList()) {
+            List<BuildResponse.PartDto> boardsTop = motherboardCandidates.stream().limit(3).toList();
+
+            for (BuildResponse.PartDto gpu : gpus) {
                 Tier gpuTier = tierOf(gpu);
-                boolean pairingAllowed = cpuGpuPairingAllowed(cpuTier, gpuTier, requirements.useCase());
+                boolean pairingAllowed = cpuGpuPairingAllowed(
+                        cpuTier,
+                        gpuTier,
+                        requirements.useCase(),
+                        resolutionLabel(requirements.resolutionTarget()),
+                        budget);
                 if (!pairingAllowed) {
                     boolean performancePriority = requirements != null
                             && requirements.priorities() != null
@@ -400,79 +532,79 @@ public class FreshBuildRecommendationService {
                     }
                 }
 
-                for (BuildResponse.PartDto motherboard : motherboardCandidates.stream().limit(3).toList()) {
+                int estimatedPower = estimatePower(cpu, gpu);
+                int psuMinW = psuMinimumWattage(estimatedPower, budget);
+                List<BuildResponse.PartDto> psuCandidates = selectPsuCandidates(
+                        pools.psus,
+                        psuMinW,
+                        estimatedPower,
+                        requirements,
+                        budget,
+                        profile,
+                        intentProfile);
+
+                if (psuCandidates.isEmpty()) {
+                    continue;
+                }
+
+                for (BuildResponse.PartDto motherboard : boardsTop) {
                     String expectedMemoryType = normalizeDdrLabel(motherboard.memoryType());
-                    List<BuildResponse.PartDto> memoryCandidates = pools.memories.stream()
-                            .filter(memory -> memory != null && memory.memoryType() != null && !memory.memoryType().isBlank())
+                    List<BuildResponse.PartDto> memoryPool = pools.memories.stream()
+                            .filter(memory -> memory != null && !isSodimm(memory))
                             .filter(memory -> {
                                 if (expectedMemoryType == null || expectedMemoryType.isBlank()) {
                                     return true;
                                 }
-                                String actualMemoryType = normalizeDdrLabel(memory.memoryType());
+                                String actualMemoryType = effectiveMemoryDdrType(memory);
                                 return actualMemoryType != null && expectedMemoryType.equalsIgnoreCase(actualMemoryType);
                             })
-                            .sorted(Comparator.comparing((BuildResponse.PartDto part) -> partScore(part, "memory", requirements, budget.multiply(new BigDecimal("0.12")), profile)).reversed())
-                            .limit(6)
+                            .toList();
+                    List<BuildResponse.PartDto> memoryCandidates = memoryPool.stream()
+                            .sorted(Comparator.comparingInt((BuildResponse.PartDto m) -> hasPositivePrice(m) ? 0 : 1)
+                                    .thenComparing(memoryCandidateComparator(requirements, budget, profile, intentProfile)))
+                            .limit(3)
                             .toList();
 
                     if (memoryCandidates.isEmpty()) {
                         continue;
                     }
 
-                    BuildResponse.PartDto memory = memoryCandidates.get(0);
-                    BuildResponse.PartDto storage = rankParts(pools.storages, "storage", requirements, budget.multiply(new BigDecimal("0.10")), profile)
-                            .stream()
-                            .findFirst()
-                            .orElse(null);
-                    BuildResponse.PartDto pcCase = rankParts(pools.cases, "pcCase", requirements, budget.multiply(new BigDecimal("0.07")), profile)
-                            .stream()
-                            .findFirst()
-                            .orElse(null);
+                    for (BuildResponse.PartDto memory : memoryCandidates) {
+                        for (BuildResponse.PartDto storage : storageCandidates) {
+                            for (BuildResponse.PartDto pcCase : pcCaseCandidates) {
+                                for (BuildResponse.PartDto psu : psuCandidates) {
+                                    Map<String, BuildResponse.PartDto> parts = new LinkedHashMap<>();
+                                    parts.put("cpu", cpu);
+                                    parts.put("gpu", gpu);
+                                    parts.put("motherboard", motherboard);
+                                    parts.put("memory", memory);
+                                    parts.put("storage", storage);
+                                    parts.put("powerSupply", psu);
+                                    parts.put("pcCase", pcCase);
 
-                    if (storage == null || pcCase == null) {
-                        continue;
-                    }
+                                    BigDecimal total = totalPrice(parts);
+                                    if (strictBudget && total.compareTo(budget) > 0) {
+                                        continue;
+                                    }
 
-                    int estimatedPower = estimatePower(cpu, gpu);
-                    int psuMinW = psuMinimumWattage(estimatedPower);
-                    BuildResponse.PartDto psu = pools.psus.stream()
-                            .filter(item -> safeInt(item.wattage(), 0) >= psuMinW)
-                            .sorted(Comparator.comparing((BuildResponse.PartDto part) -> partScore(part, "powerSupply", requirements, budget.multiply(new BigDecimal("0.09")), profile)).reversed())
-                            .findFirst()
-                            .orElse(null);
+                                    BuildResponse.ChecksDto checks = evaluateChecks(parts, budget, requirements, strictBudget);
+                                    if (!Boolean.TRUE.equals(checks.compatibilityPassed())) {
+                                        continue;
+                                    }
 
-                    if (psu == null) {
-                        continue;
-                    }
+                                    BigDecimal score = buildCompositeScore(parts, total, budget, requirements, profile, intentProfile);
+                                    List<String> tradeoffs = tradeoffs(profile.label);
+                                    BuildResponse.TotalsDto totals = buildTotals(parts);
 
-                    Map<String, BuildResponse.PartDto> parts = new LinkedHashMap<>();
-                    parts.put("cpu", cpu);
-                    parts.put("gpu", gpu);
-                    parts.put("motherboard", motherboard);
-                    parts.put("memory", memory);
-                    parts.put("storage", storage);
-                    parts.put("powerSupply", psu);
-                    parts.put("pcCase", pcCase);
+                                    VariantCandidate candidate = new VariantCandidate(profile.label, parts, totals, score, tradeoffs, checks, 1);
+                                    evaluated += 1;
 
-                    BigDecimal total = totalPrice(parts);
-                    if (strictBudget && total.compareTo(budget) > 0) {
-                        continue;
-                    }
-
-                    BuildResponse.ChecksDto checks = evaluateChecks(parts, budget, requirements, strictBudget, pools.stockValidationTrusted);
-                    if (!Boolean.TRUE.equals(checks.compatibilityPassed())) {
-                        continue;
-                    }
-
-                    BigDecimal score = buildCompositeScore(parts, total, budget, profile);
-                    List<String> tradeoffs = tradeoffs(profile.label);
-                    BuildResponse.TotalsDto totals = buildTotals(parts);
-
-                    VariantCandidate candidate = new VariantCandidate(profile.label, parts, totals, score, tradeoffs, checks, 1);
-                    evaluated += 1;
-
-                    if (best == null || candidate.score.compareTo(best.score) > 0) {
-                        best = candidate;
+                                    if (best == null || candidate.score.compareTo(best.score) > 0) {
+                                        best = candidate;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -485,22 +617,22 @@ public class FreshBuildRecommendationService {
         return new VariantCandidate(best.label, best.parts, best.totals, best.score, best.tradeoffs, best.checks, evaluated);
     }
 
-    private BuildResponse.ChecksDto evaluateChecks(
+        private BuildResponse.ChecksDto evaluateChecks(
             Map<String, BuildResponse.PartDto> parts,
             BigDecimal budget,
             BuildResponse.RequirementsDto requirements,
-            boolean strictBudget,
-            boolean stockTrusted
-    ) {
+            boolean strictBudget
+        ) {
         BuildResponse.PartDto cpu = parts.get("cpu");
         BuildResponse.PartDto gpu = parts.get("gpu");
         BuildResponse.PartDto motherboard = parts.get("motherboard");
         BuildResponse.PartDto memory = parts.get("memory");
+        BuildResponse.PartDto storage = parts.get("storage");
         BuildResponse.PartDto psu = parts.get("powerSupply");
 
         boolean socketCompatible = compatibleSocket(cpu == null ? null : cpu.socket(), motherboard == null ? null : motherboard.socket());
         String expectedMemoryType = motherboard == null ? null : normalizeDdrLabel(motherboard.memoryType());
-        String actualMemoryType = memory == null ? null : normalizeDdrLabel(memory.memoryType());
+        String actualMemoryType = memory == null ? null : effectiveMemoryDdrType(memory);
         boolean memoryCompatible = memory != null
             && !isSodimm(memory)
             && (expectedMemoryType == null
@@ -508,20 +640,27 @@ public class FreshBuildRecommendationService {
 
         int estimatedPower = estimatePower(cpu, gpu);
         int psuWatts = safeInt(psu == null ? null : psu.wattage(), 0);
-        boolean psuMinHeadroomOk = psuWatts >= psuMinimumWattage(estimatedPower);
+        boolean psuMinHeadroomOk = psuWatts >= psuMinimumWattage(estimatedPower, budget);
         boolean psuPreferredHeadroomOk = psuWatts >= psuPreferredWattage(estimatedPower);
 
         BigDecimal total = totalPrice(parts);
         boolean budgetOk = total.compareTo(budget) <= 0;
-        boolean cpuGpuBalanceOk = cpuGpuPairingAllowed(tierOf(cpu), tierOf(gpu), requirements.useCase());
+        boolean cpuGpuBalanceOk = cpuGpuPairingAllowed(
+                tierOf(cpu),
+                tierOf(gpu),
+                requirements.useCase(),
+                resolutionLabel(requirements.resolutionTarget()),
+                budget);
+        boolean gamingMinimumsOk = meetsGamingMinimums(requirements, gpu, memory, storage);
         boolean caseFitValidated = false;
-        boolean stockValidationEnforced = stockTrusted;
+        boolean stockValidationEnforced = false;
         String powerEstimateConfidence = powerEstimateConfidence(cpu, gpu);
 
         boolean compatibilityPassed = socketCompatible
                 && memoryCompatible
                 && psuMinHeadroomOk
-                && cpuGpuBalanceOk;
+            && cpuGpuBalanceOk
+            && gamingMinimumsOk;
 
         return new BuildResponse.ChecksDto(
                 compatibilityPassed,
@@ -531,14 +670,13 @@ public class FreshBuildRecommendationService {
                 psuPreferredHeadroomOk,
                 budgetOk,
                 cpuGpuBalanceOk,
-                stockTrusted,
-                stockValidationEnforced,
+                false,
+                false,
                 caseFitValidated,
                 powerEstimateConfidence
         );
     }
-
-    private BuildResponse.ChecksDto aggregateChecks(List<VariantCandidate> builtVariants, boolean stockTrusted) {
+    private BuildResponse.ChecksDto aggregateChecks(List<VariantCandidate> builtVariants) {
         boolean compatibilityPassed = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.compatibilityPassed()));
         boolean socketCompatible = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.socketCompatible()));
         boolean memoryCompatible = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.memoryCompatible()));
@@ -546,7 +684,6 @@ public class FreshBuildRecommendationService {
         boolean psuPreferred = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.psuPreferredHeadroomPassed()));
         boolean budgetOk = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.budgetOk()));
         boolean cpuGpuBalanceOk = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.cpuGpuBalanceOk()));
-        boolean stockValidationEnforced = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.stockValidationEnforced()));
         boolean caseFitValidated = builtVariants.stream().allMatch(candidate -> Boolean.TRUE.equals(candidate.checks.caseFitValidated()));
         String powerEstimateConfidence = builtVariants.stream().allMatch(candidate -> "medium".equalsIgnoreCase(candidate.checks.powerEstimateConfidence()))
             ? "medium"
@@ -560,8 +697,8 @@ public class FreshBuildRecommendationService {
                 psuPreferred,
                 budgetOk,
                 cpuGpuBalanceOk,
-                stockTrusted,
-                stockValidationEnforced,
+            false,
+            false,
                 caseFitValidated,
                 powerEstimateConfidence
         );
@@ -592,8 +729,7 @@ public class FreshBuildRecommendationService {
                 .map(this::normalizeDdrLabel)
                 .filter(memoryType -> memoryType != null && !memoryType.isBlank())
                 .anyMatch(memoryType -> pools.memories.stream()
-                    .map(BuildResponse.PartDto::memoryType)
-                    .map(this::normalizeDdrLabel)
+                    .map(this::effectiveMemoryDdrType)
                     .anyMatch(memoryType::equalsIgnoreCase));
             if (!hasMemoryMatch) {
             return "No memory kit matched the motherboard memoryType values.";
@@ -602,7 +738,7 @@ public class FreshBuildRecommendationService {
 
         boolean hasPsuHeadroom = pools.cpus.stream().anyMatch(cpu -> pools.gpus.stream().anyMatch(gpu -> {
             int estimatedPower = estimatePower(cpu, gpu);
-            int psuMinW = psuMinimumWattage(estimatedPower);
+            int psuMinW = psuMinimumWattage(estimatedPower, budget);
             return pools.psus.stream().anyMatch(psu -> safeInt(psu.wattage(), 0) >= psuMinW);
         }));
         if (!hasPsuHeadroom) {
@@ -661,7 +797,8 @@ public class FreshBuildRecommendationService {
             String component,
             BuildResponse.RequirementsDto requirements,
             BigDecimal targetBudget,
-            VariantProfile profile
+            VariantProfile profile,
+            IntentScoringProfile intentProfile
     ) {
         if (parts == null || parts.isEmpty()) {
             return List.of();
@@ -673,9 +810,25 @@ public class FreshBuildRecommendationService {
 
         List<BuildResponse.PartDto> source = priced.isEmpty() ? parts : priced;
 
-        return source.stream()
-                .sorted(Comparator.comparing((BuildResponse.PartDto part) -> partScore(part, component, requirements, targetBudget, profile)).reversed())
+        List<BuildResponse.PartDto> sorted = source.stream()
+                .sorted(Comparator.comparing((BuildResponse.PartDto part) -> partScore(part, component, requirements, targetBudget, profile, intentProfile)).reversed())
                 .toList();
+
+        if ("cpu".equals(component)) {
+            List<BuildResponse.PartDto> socketFirst = new ArrayList<>();
+            List<BuildResponse.PartDto> socketUnknown = new ArrayList<>();
+            for (BuildResponse.PartDto part : sorted) {
+                if (part != null && part.socket() != null && !part.socket().isBlank()) {
+                    socketFirst.add(part);
+                } else {
+                    socketUnknown.add(part);
+                }
+            }
+            socketFirst.addAll(socketUnknown);
+            return socketFirst;
+        }
+
+        return sorted;
     }
 
     private double partScore(
@@ -683,7 +836,8 @@ public class FreshBuildRecommendationService {
             String component,
             BuildResponse.RequirementsDto requirements,
             BigDecimal targetBudget,
-            VariantProfile profile
+            VariantProfile profile,
+            IntentScoringProfile intentProfile
     ) {
         if (part == null) {
             return 0.0;
@@ -692,6 +846,9 @@ public class FreshBuildRecommendationService {
         double value = priceFitScore(part.priceKzt(), targetBudget);
         double performance = part.performanceScore() == null ? 0 : part.performanceScore();
         double upgrade = upgradePathScore(part, component, requirements);
+        double efficiency = efficiencyScore(part, component);
+        double aesthetic = aestheticScore(part, component, requirements);
+        double noise = noiseScore(part, component);
 
         if ("storage".equals(component) && requirements != null && "gaming".equalsIgnoreCase(requirements.useCase())) {
             if (isSsd(part)) {
@@ -703,7 +860,7 @@ public class FreshBuildRecommendationService {
         }
 
         if ("gpu".equals(component) && requirements != null) {
-            String resolution = requirements.targetResolution();
+            String resolution = resolutionLabel(requirements.resolutionTarget());
             boolean perfHeavy = requirements.priorities() != null
                     && requirements.priorities().stream()
                     .anyMatch(priority -> priority != null && priority.toLowerCase(Locale.ROOT).contains("performance"));
@@ -715,9 +872,33 @@ public class FreshBuildRecommendationService {
             }
         }
 
-        return (profile.valueWeight * value)
-                + (profile.performanceWeight * performance)
-                + (profile.upgradeWeight * upgrade);
+        if ("memory".equals(component) && requirements != null && isEntryBudget(requirements.budgetKzt())) {
+            int gb = extractMemoryCapacityGb(part.name());
+            if (gb >= 32) {
+                performance -= 28.0;
+            } else if (gb >= 24) {
+                performance -= 12.0;
+            }
+        }
+
+        if ("powerSupply".equals(component) && requirements != null && isEntryBudget(requirements.budgetKzt())) {
+            int w = safeInt(part.wattage(), 0);
+            if (w > 700) {
+                performance -= Math.min(35.0, (w - 700) / 8.0);
+            }
+        }
+
+        double performanceWeight = Math.min(0.92, Math.max(0.15, componentWeight(component, intentProfile) + 0.12));
+        double valueWeight = Math.max(0.08, 1.0 - performanceWeight);
+
+        double objectiveScore = (valueWeight * value)
+            + (performanceWeight * performance)
+            + (Math.max(0.05, intentProfile.upgradeWeight()) * upgrade)
+            + (intentProfile.efficiencyWeight() * efficiency)
+            + (intentProfile.aestheticWeight() * aesthetic)
+            + (intentProfile.noiseWeight() * noise);
+
+        return objectiveScore;
     }
 
     private boolean isHdd(BuildResponse.PartDto part) {
@@ -733,6 +914,36 @@ public class FreshBuildRecommendationService {
     private boolean isSodimm(BuildResponse.PartDto memory) {
         String name = memory == null || memory.name() == null ? "" : memory.name().toLowerCase(Locale.ROOT);
         return name.contains("so-dimm") || name.contains("sodimm");
+    }
+
+    private boolean isEntryBudget(BigDecimal budgetKzt) {
+        return budgetKzt != null && budgetKzt.compareTo(new BigDecimal("350000")) < 0;
+    }
+
+    private boolean hasPositivePrice(BuildResponse.PartDto part) {
+        return part != null && part.priceKzt() != null && part.priceKzt().signum() > 0;
+    }
+
+    private Comparator<BuildResponse.PartDto> memoryCandidateComparator(
+            BuildResponse.RequirementsDto requirements,
+            BigDecimal budget,
+            VariantProfile profile,
+            IntentScoringProfile intentProfile
+    ) {
+        Comparator<BuildResponse.PartDto> byScore = Comparator.comparing(
+                (BuildResponse.PartDto part) -> partScore(part, "memory", requirements, targetBudgetForComponent(budget, "memory", intentProfile), profile, intentProfile))
+                .reversed();
+        if (!isEntryBudget(budget)) {
+            return byScore;
+        }
+        return Comparator
+                .comparingInt((BuildResponse.PartDto m) -> {
+                    int gb = extractMemoryCapacityGb(m.name());
+                    return gb <= 0 ? 999 : gb;
+                })
+                .thenComparing(
+                        (BuildResponse.PartDto part) -> partScore(part, "memory", requirements, targetBudgetForComponent(budget, "memory", intentProfile), profile, intentProfile),
+                        Comparator.reverseOrder());
     }
 
     private double priceFitScore(BigDecimal price, BigDecimal target) {
@@ -761,7 +972,11 @@ public class FreshBuildRecommendationService {
         }
 
         if ("powerSupply".equals(component) && safeInt(part.wattage(), 0) >= 750) {
-            score += 20.0;
+            if (requirements != null && isEntryBudget(requirements.budgetKzt())) {
+                score += 4.0;
+            } else {
+                score += 20.0;
+            }
         }
 
         if (requirements != null && requirements.priorities() != null
@@ -776,14 +991,90 @@ public class FreshBuildRecommendationService {
         if (cpuSocket == null || motherboardSocket == null) {
             return false;
         }
-        return cpuSocket.equalsIgnoreCase(motherboardSocket);
+        Set<String> cpuTokens = socketTokens(cpuSocket);
+        Set<String> motherboardTokens = socketTokens(motherboardSocket);
+        if (cpuTokens.isEmpty() || motherboardTokens.isEmpty()) {
+            return cpuSocket.equalsIgnoreCase(motherboardSocket);
+        }
+        for (String token : cpuTokens) {
+            if (motherboardTokens.contains(token)) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private boolean cpuGpuPairingAllowed(Tier cpuTier, Tier gpuTier, String useCase) {
+    private Set<String> socketTokens(String socket) {
+        if (socket == null || socket.isBlank()) {
+            return Set.of();
+        }
+
+        String normalized = normalize(socket);
+        Set<String> tokens = new LinkedHashSet<>();
+
+        if (normalized.contains("am4")) tokens.add("am4");
+        if (normalized.contains("am5")) tokens.add("am5");
+        if (normalized.contains("am3")) tokens.add("am3");
+        if (normalized.contains("am2")) tokens.add("am2");
+        if (normalized.contains("lga1700")) tokens.add("lga1700");
+        if (normalized.contains("lga1851")) tokens.add("lga1851");
+        if (normalized.contains("lga1200")) tokens.add("lga1200");
+        if (normalized.contains("lga1151")) tokens.add("lga1151");
+        if (normalized.contains("lga1150")) tokens.add("lga1150");
+        if (normalized.contains("lga2066")) tokens.add("lga2066");
+        if (normalized.contains("sTRx4".toLowerCase(Locale.ROOT))) tokens.add("strx4");
+        if (normalized.contains("tr4")) tokens.add("tr4");
+
+        Matcher lgaMatcher = Pattern.compile("lga\\s*(\\d{4})").matcher(normalized);
+        while (lgaMatcher.find()) {
+            tokens.add("lga" + lgaMatcher.group(1));
+        }
+
+        Matcher amMatcher = Pattern.compile("am\\s*(\\d)").matcher(normalized);
+        while (amMatcher.find()) {
+            tokens.add("am" + amMatcher.group(1));
+        }
+
+        Matcher numberMatcher = Pattern.compile("\\b(1150|1151|1200|1700|1851|2066)\\b").matcher(normalized);
+        while (numberMatcher.find()) {
+            tokens.add("lga" + numberMatcher.group(1));
+        }
+
+        return tokens;
+    }
+
+    private boolean cpuGpuPairingAllowed(
+            Tier cpuTier,
+            Tier gpuTier,
+            String useCase,
+            String resolution,
+            BigDecimal budgetKzt
+    ) {
         if (cpuTier == null || gpuTier == null) {
             return false;
         }
         int delta = Math.abs(cpuTier.ordinal() - gpuTier.ordinal());
+        String normalizedUseCase = useCase == null ? "mixed" : useCase.toLowerCase(Locale.ROOT);
+        String normalizedResolution = resolution == null ? "1080p" : resolution.toLowerCase(Locale.ROOT);
+        boolean entryBudget = budgetKzt != null && budgetKzt.compareTo(new BigDecimal("350000")) < 0;
+
+        if ("gaming".equals(normalizedUseCase)) {
+            if (normalizedResolution.contains("4k")) {
+                return delta <= 4;
+            }
+            if (normalizedResolution.contains("1440")) {
+                return delta <= 3;
+            }
+            if (entryBudget) {
+                return delta <= 4;
+            }
+            return delta <= 2;
+        }
+
+        if ("work".equals(normalizedUseCase)) {
+            return delta <= 4;
+        }
+
         return delta <= 3;
     }
 
@@ -836,16 +1127,97 @@ public class FreshBuildRecommendationService {
     }
 
     private int estimatePower(BuildResponse.PartDto cpu, BuildResponse.PartDto gpu) {
-        int cpuPower = safeInt(cpu == null ? null : cpu.wattage(), 95);
-        int gpuPower = safeInt(gpu == null ? null : gpu.wattage(), 220);
-        return cpuPower + gpuPower + 120;
+        return inferredCpuPowerForEstimate(cpu) + inferredGpuPowerForEstimate(gpu) + 120;
     }
 
-    private int psuMinimumWattage(int estimatedPower) {
+    private int inferredCpuPowerForEstimate(BuildResponse.PartDto cpu) {
+        if (cpu == null) {
+            return 65;
+        }
+        int w = safeInt(cpu.wattage(), 0);
+        if (w > 0) {
+            return w;
+        }
+        return switch (tierOf(cpu)) {
+            case ENTRY -> 65;
+            case LOW_MID -> 75;
+            case MID -> 95;
+            case MID_HIGH -> 105;
+            case HIGH -> 125;
+            case ENTHUSIAST -> 165;
+        };
+    }
+
+    private int inferredGpuPowerForEstimate(BuildResponse.PartDto gpu) {
+        if (gpu == null) {
+            return 0;
+        }
+        int w = safeInt(gpu.wattage(), 0);
+        if (w > 0) {
+            return w;
+        }
+        return switch (tierOf(gpu)) {
+            case ENTRY -> 65;
+            case LOW_MID -> 85;
+            case MID -> 115;
+            case MID_HIGH -> 150;
+            case HIGH -> 185;
+            case ENTHUSIAST -> 240;
+        };
+    }
+
+    private int psuMinimumWattage(int estimatedPower, BigDecimal budgetKzt) {
+        BigDecimal mult = new BigDecimal("1.20");
+        if (budgetKzt != null && budgetKzt.compareTo(new BigDecimal("350000")) < 0) {
+            mult = new BigDecimal("1.12");
+        }
         return BigDecimal.valueOf(estimatedPower)
-                .multiply(new BigDecimal("1.20"))
+                .multiply(mult)
                 .setScale(0, RoundingMode.CEILING)
                 .intValue();
+    }
+
+    private List<BuildResponse.PartDto> selectPsuCandidates(
+            List<BuildResponse.PartDto> psus,
+            int psuMinW,
+            int estimatedPower,
+            BuildResponse.RequirementsDto requirements,
+            BigDecimal budget,
+            VariantProfile profile,
+            IntentScoringProfile intentProfile
+    ) {
+        int preferredW = psuPreferredWattage(estimatedPower);
+        Comparator<BuildResponse.PartDto> byScore = Comparator.comparing(
+                (BuildResponse.PartDto part) -> partScore(part, "powerSupply", requirements, targetBudgetForComponent(budget, "powerSupply", intentProfile), profile, intentProfile))
+                .reversed();
+        Comparator<BuildResponse.PartDto> psuOrder = isEntryBudget(budget)
+                ? Comparator
+                .<BuildResponse.PartDto>comparingInt(p -> Math.abs(safeInt(p.wattage(), 0) - preferredW))
+                .thenComparingInt(p -> safeInt(p.wattage(), 0))
+                .thenComparing((BuildResponse.PartDto part) -> partScore(part, "powerSupply", requirements, targetBudgetForComponent(budget, "powerSupply", intentProfile), profile, intentProfile), Comparator.reverseOrder())
+                : byScore;
+        List<BuildResponse.PartDto> primary = psus.stream()
+                .filter(item -> safeInt(item.wattage(), 0) >= psuMinW)
+                .sorted(psuOrder)
+                .limit(3)
+                .toList();
+        if (!primary.isEmpty()) {
+            return primary;
+        }
+        int relaxed = Math.max(350, (int) Math.floor(psuMinW * 0.92));
+        List<BuildResponse.PartDto> secondary = psus.stream()
+                .filter(item -> safeInt(item.wattage(), 0) >= relaxed)
+                .sorted(psuOrder)
+                .limit(3)
+                .toList();
+        if (!secondary.isEmpty()) {
+            return secondary;
+        }
+        return psus.stream()
+                .filter(item -> safeInt(item.wattage(), 0) > 0)
+                .sorted(Comparator.comparingInt((BuildResponse.PartDto p) -> safeInt(p.wattage(), 0)))
+                .limit(3)
+                .toList();
     }
 
     private int psuPreferredWattage(int estimatedPower) {
@@ -873,20 +1245,395 @@ public class FreshBuildRecommendationService {
             Map<String, BuildResponse.PartDto> parts,
             BigDecimal total,
             BigDecimal budget,
-            VariantProfile profile
+            BuildResponse.RequirementsDto requirements,
+            VariantProfile profile,
+            IntentScoringProfile intentProfile
     ) {
         BuildResponse.PartDto cpu = parts.get("cpu");
         BuildResponse.PartDto gpu = parts.get("gpu");
+        BuildResponse.PartDto memory = parts.get("memory");
+        BuildResponse.PartDto storage = parts.get("storage");
+        BuildResponse.PartDto motherboard = parts.get("motherboard");
+        BuildResponse.PartDto psu = parts.get("powerSupply");
+        BuildResponse.PartDto pcCase = parts.get("pcCase");
 
-        double value = priceFitScore(total, budget);
-        double performance = ((safePerformance(cpu) + safePerformance(gpu)) / 2.0);
+        double intentPerformance = weightedPartPerformance(parts, intentProfile);
+        double value = marketValueScore(parts, budget, intentProfile);
         double balance = 100.0 - (Math.abs(tierOf(cpu).ordinal() - tierOf(gpu).ordinal()) * 20.0);
+        double upgrade = (
+            upgradePathScore(cpu, "cpu", requirements)
+                + upgradePathScore(motherboard, "motherboard", requirements)
+                + upgradePathScore(psu, "powerSupply", requirements)
+        ) / 3.0;
+        double preferenceMatch = (
+            aestheticScore(pcCase, "pcCase", requirements)
+                + noiseScore(psu, "powerSupply")
+                + efficiencyScore(psu, "powerSupply")
+        ) / 3.0;
 
-        double score = (profile.valueWeight * value)
-                + (profile.performanceWeight * performance)
-                + (profile.upgradeWeight * Math.max(0.0, balance));
+        double budgetPenalty = budgetAllocationPenalty(parts, budget, intentProfile);
+        double bottleneckPenalty = bottleneckPenalty(cpu, gpu, requirements, intentProfile);
 
-        return BigDecimal.valueOf(score).setScale(2, RoundingMode.HALF_UP);
+        double score = (intentProfile.rawPerformanceWeight() * intentPerformance)
+            + (intentProfile.valueWeight() * value)
+            + (0.10 * Math.max(0.0, balance))
+            + (intentProfile.upgradeWeight() * upgrade)
+            + (0.05 * preferenceMatch)
+            - (intentProfile.budgetEfficiencyWeight() * budgetPenalty)
+            - (intentProfile.bottleneckPenaltyWeight() * bottleneckPenalty);
+
+        if (memory != null && isSodimm(memory)) {
+            score -= 15.0;
+        }
+        if (storage != null && isHdd(storage) && requirements != null && "gaming".equalsIgnoreCase(requirements.useCase())) {
+            score -= 12.0;
+        }
+
+        return BigDecimal.valueOf(Math.max(0.0, score)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private IntentScoringProfile buildIntentScoringProfile(BuildResponse.RequirementsDto requirements, String prompt) {
+        WorkloadType workload = requirements == null || requirements.workloadType() == null
+                ? inferWorkload(prompt)
+                : requirements.workloadType();
+        ResolutionTarget resolution = requirements == null || requirements.resolutionTarget() == null
+                ? inferResolutionHint(prompt == null ? "" : prompt.toLowerCase(Locale.ROOT))
+                : requirements.resolutionTarget();
+        int refreshRateHz = requirements == null || requirements.refreshRateHz() == null || requirements.refreshRateHz() <= 0
+                ? inferRefreshRate(prompt)
+                : requirements.refreshRateHz();
+        BigDecimal budget = requirements == null || requirements.budgetKzt() == null ? DEFAULT_BUDGET : requirements.budgetKzt();
+
+        double budgetPressure = budgetPressure(budget);
+        double refreshPressure = refreshPressure(refreshRateHz);
+        double resolutionPressure = switch (resolution) {
+            case P4K -> 1.0;
+            case P1440 -> 0.65;
+            default -> 0.30;
+        };
+
+        double gpuWeight;
+        double cpuWeight;
+        double ramWeight;
+        double storageWeight;
+        double motherboardWeight;
+        double psuWeight;
+        double caseWeight;
+        double valueWeight;
+        double performanceWeight;
+        double upgradeWeight;
+
+        switch (workload) {
+            case ESPORTS -> {
+                gpuWeight = 0.30 + (resolutionPressure * 0.05) + (refreshPressure * 0.05);
+                cpuWeight = 0.34 + (refreshPressure * 0.10);
+                ramWeight = 0.13;
+                storageWeight = 0.07;
+                motherboardWeight = 0.08;
+                psuWeight = 0.04;
+                caseWeight = 0.04;
+                performanceWeight = 0.42 + (refreshPressure * 0.10);
+                valueWeight = 0.26 + (budgetPressure * 0.10);
+                upgradeWeight = 0.14;
+            }
+            case GAMING, AAA -> {
+                gpuWeight = 0.40 + (resolutionPressure * 0.14) + (refreshPressure * 0.04);
+                cpuWeight = 0.24 - (resolutionPressure * 0.04) + (refreshPressure * 0.03);
+                ramWeight = 0.12;
+                storageWeight = 0.08;
+                motherboardWeight = 0.07;
+                psuWeight = 0.05;
+                caseWeight = 0.04;
+                performanceWeight = 0.48 + (resolutionPressure * 0.08);
+                valueWeight = 0.22 + (budgetPressure * 0.10);
+                upgradeWeight = 0.13;
+            }
+            case WORK, CREATION -> {
+                gpuWeight = 0.18 + (resolutionPressure * 0.03);
+                cpuWeight = 0.34 + (refreshPressure * 0.04);
+                ramWeight = 0.18;
+                storageWeight = 0.12;
+                motherboardWeight = 0.10;
+                psuWeight = 0.04;
+                caseWeight = 0.04;
+                performanceWeight = 0.34 + (refreshPressure * 0.04);
+                valueWeight = 0.30 + (budgetPressure * 0.08);
+                upgradeWeight = 0.18;
+            }
+            default -> {
+                gpuWeight = 0.30 + (resolutionPressure * 0.06);
+                cpuWeight = 0.28 + (refreshPressure * 0.05);
+                ramWeight = 0.15;
+                storageWeight = 0.10;
+                motherboardWeight = 0.09;
+                psuWeight = 0.04;
+                caseWeight = 0.04;
+                performanceWeight = 0.38 + (resolutionPressure * 0.05);
+                valueWeight = 0.28 + (budgetPressure * 0.08);
+                upgradeWeight = 0.16;
+            }
+        }
+
+        double weightSum = gpuWeight + cpuWeight + ramWeight + storageWeight + motherboardWeight + psuWeight + caseWeight;
+        if (weightSum <= 0.0) {
+            weightSum = 1.0;
+        }
+
+        return new IntentScoringProfile(
+                normalizeWeight(gpuWeight / weightSum),
+                normalizeWeight(cpuWeight / weightSum),
+                normalizeWeight(ramWeight / weightSum),
+                normalizeWeight(storageWeight / weightSum),
+                normalizeWeight(motherboardWeight / weightSum),
+                normalizeWeight(psuWeight / weightSum),
+                normalizeWeight(caseWeight / weightSum),
+                normalizeWeight(valueWeight),
+                normalizeWeight(performanceWeight),
+                normalizeWeight(upgradeWeight),
+                normalizeWeight(0.08 + (workload == WorkloadType.WORK || workload == WorkloadType.CREATION ? 0.05 : 0.0)),
+                normalizeWeight(workload == WorkloadType.WORK || workload == WorkloadType.CREATION ? 0.06 : 0.03),
+                normalizeWeight(workload == WorkloadType.ESPORTS ? 0.05 : 0.03),
+                normalizeWeight(0.12),
+                normalizeWeight(0.14 + budgetPressure * 0.04),
+                normalizeWeight(Math.max(0.18, gpuWeight - 0.10)),
+                normalizeWeight(Math.min(0.72, gpuWeight + 0.18)),
+                normalizeWeight(Math.max(0.14, cpuWeight - 0.06)),
+                normalizeWeight(Math.min(0.50, cpuWeight + 0.18)),
+                normalizeWeight(Math.max(0.08, ramWeight - 0.04)),
+                normalizeWeight(Math.min(0.30, ramWeight + 0.10)),
+                normalizeWeight(0.14 + budgetPressure * 0.06)
+        );
+    }
+
+    private double componentWeight(String component, IntentScoringProfile profile) {
+        return switch (component) {
+            case "gpu" -> profile.gpuWeight();
+            case "cpu" -> profile.cpuWeight();
+            case "memory" -> profile.ramWeight();
+            case "storage" -> profile.storageWeight();
+            case "motherboard" -> profile.motherboardWeight();
+            case "powerSupply" -> profile.psuWeight();
+            case "pcCase" -> profile.caseWeight();
+            default -> 0.05;
+        };
+    }
+
+    private BigDecimal targetBudgetForComponent(BigDecimal budget, String component, IntentScoringProfile profile) {
+        return budget.multiply(BigDecimal.valueOf(Math.max(0.04, componentWeight(component, profile))));
+    }
+
+    private double weightedPartPerformance(Map<String, BuildResponse.PartDto> parts, IntentScoringProfile profile) {
+        if (parts == null || parts.isEmpty()) {
+            return 0.0;
+        }
+
+        double weighted = 0.0;
+        weighted += componentWeight("cpu", profile) * safePerformance(parts.get("cpu"));
+        weighted += componentWeight("gpu", profile) * safePerformance(parts.get("gpu"));
+        weighted += componentWeight("memory", profile) * safePerformance(parts.get("memory"));
+        weighted += componentWeight("storage", profile) * safePerformance(parts.get("storage"));
+        weighted += componentWeight("motherboard", profile) * safePerformance(parts.get("motherboard"));
+        weighted += componentWeight("powerSupply", profile) * safePerformance(parts.get("powerSupply"));
+        weighted += componentWeight("pcCase", profile) * safePerformance(parts.get("pcCase"));
+        return weighted;
+    }
+
+    private double marketValueScore(Map<String, BuildResponse.PartDto> parts, BigDecimal budget, IntentScoringProfile intentProfile) {
+        if (parts == null || parts.isEmpty()) {
+            return 0.0;
+        }
+
+        double perf = weightedPartPerformance(parts, intentProfile);
+        BigDecimal total = totalPrice(parts);
+        if (total.signum() <= 0) {
+            return 0.0;
+        }
+
+        double perfPerKzt = perf / total.doubleValue();
+        double budgetFit = priceFitScore(total, budget) / 100.0;
+        return Math.min(100.0, (perfPerKzt * 400000.0 * 0.7) + (budgetFit * 30.0));
+    }
+
+    private double budgetAllocationPenalty(
+            Map<String, BuildResponse.PartDto> parts,
+            BigDecimal budget,
+            IntentScoringProfile profile
+    ) {
+        if (parts == null || budget == null || budget.signum() <= 0) {
+            return 0.0;
+        }
+
+        BigDecimal total = totalPrice(parts);
+        if (total.signum() <= 0) {
+            return 0.0;
+        }
+
+        double gpuShareTotal = share(parts.get("gpu"), total);
+        double cpuShareTotal = share(parts.get("cpu"), total);
+        double memoryShareTotal = share(parts.get("memory"), total);
+        double motherboardShareTotal = share(parts.get("motherboard"), total);
+
+        double gpuShareBudget = shareAgainstBudget(parts.get("gpu"), budget);
+        double cpuShareBudget = shareAgainstBudget(parts.get("cpu"), budget);
+        double memoryShareBudget = shareAgainstBudget(parts.get("memory"), budget);
+        double motherboardShareBudget = shareAgainstBudget(parts.get("motherboard"), budget);
+
+        double penalty = 0.0;
+        if (gpuShareTotal < profile.gpuMinShare()) {
+            penalty += (profile.gpuMinShare() - gpuShareTotal) * 140.0;
+        }
+        if (gpuShareBudget < profile.gpuMinShare()) {
+            penalty += (profile.gpuMinShare() - gpuShareBudget) * 80.0;
+        }
+        if (gpuShareTotal > profile.gpuMaxShare()) {
+            penalty += (gpuShareTotal - profile.gpuMaxShare()) * 120.0;
+        }
+        if (cpuShareTotal < profile.cpuMinShare()) {
+            penalty += (profile.cpuMinShare() - cpuShareTotal) * 110.0;
+        }
+        if (cpuShareBudget < profile.cpuMinShare()) {
+            penalty += (profile.cpuMinShare() - cpuShareBudget) * 70.0;
+        }
+        if (cpuShareTotal > profile.cpuMaxShare()) {
+            penalty += (cpuShareTotal - profile.cpuMaxShare()) * 90.0;
+        }
+        if (memoryShareTotal < profile.ramMinShare()) {
+            penalty += (profile.ramMinShare() - memoryShareTotal) * 75.0;
+        }
+        if (memoryShareBudget < profile.ramMinShare()) {
+            penalty += (profile.ramMinShare() - memoryShareBudget) * 40.0;
+        }
+        if (memoryShareTotal > profile.ramMaxShare()) {
+            penalty += (memoryShareTotal - profile.ramMaxShare()) * 60.0;
+        }
+        if (motherboardShareTotal > profile.motherboardMaxShare()) {
+            penalty += (motherboardShareTotal - profile.motherboardMaxShare()) * 130.0;
+        }
+        if (motherboardShareBudget > profile.motherboardMaxShare()) {
+            penalty += (motherboardShareBudget - profile.motherboardMaxShare()) * 50.0;
+        }
+
+        if (budget.signum() > 0 && total.compareTo(budget) < 0 && profile.rawPerformanceWeight() > profile.valueWeight()) {
+            double budgetUsage = total.divide(budget, 6, RoundingMode.HALF_UP).doubleValue();
+            penalty += (1.0 - budgetUsage) * 120.0;
+        }
+
+        return Math.min(100.0, penalty);
+    }
+
+    private double bottleneckPenalty(
+            BuildResponse.PartDto cpu,
+            BuildResponse.PartDto gpu,
+            BuildResponse.RequirementsDto requirements,
+            IntentScoringProfile profile
+    ) {
+        if (cpu == null || gpu == null) {
+            return 50.0;
+        }
+
+        int cpuTier = tierOf(cpu).ordinal();
+        int gpuTier = tierOf(gpu).ordinal();
+        int delta = gpuTier - cpuTier;
+
+        String useCase = requirements == null || requirements.useCase() == null ? "mixed" : requirements.useCase().toLowerCase(Locale.ROOT);
+        String resolution = resolutionLabel(requirements == null ? null : requirements.resolutionTarget());
+
+        double penalty;
+        if ("gaming".equals(useCase) && resolution.contains("1080")) {
+            penalty = Math.max(0, Math.abs(delta) - 1) * 16.0;
+        } else if ("gaming".equals(useCase) && resolution.contains("1440")) {
+            penalty = Math.max(0, Math.abs(delta) - 2) * 13.0;
+        } else if ("gaming".equals(useCase) && resolution.contains("4k")) {
+            penalty = Math.max(0, (cpuTier - gpuTier) - 1) * 10.0;
+        } else {
+            penalty = Math.max(0, Math.abs(delta) - 2) * 10.0;
+        }
+
+        return Math.min(100.0, penalty * (1.0 + profile.bottleneckPenaltyWeight()));
+    }
+
+    private double efficiencyScore(BuildResponse.PartDto part, String component) {
+        if (part == null) {
+            return 40.0;
+        }
+
+        if ("powerSupply".equals(component)) {
+            int wattage = safeInt(part.wattage(), 0);
+            if (wattage >= 750 && wattage <= 850) {
+                return 90.0;
+            }
+            if (wattage > 0) {
+                return 70.0;
+            }
+        }
+
+        int perf = safePerformance(part);
+        int watts = safeInt(part.wattage(), 0);
+        if (perf <= 0 || watts <= 0) {
+            return 55.0;
+        }
+
+        return Math.min(100.0, (perf * 2.0) / Math.max(1.0, watts / 50.0));
+    }
+
+    private double aestheticScore(BuildResponse.PartDto part, String component, BuildResponse.RequirementsDto requirements) {
+        if (part == null) {
+            return 50.0;
+        }
+        String name = normalize(part.name());
+        boolean wantsRgb = requirements != null
+                && requirements.constraints() != null
+                && Boolean.TRUE.equals(requirements.constraints().rgb());
+        boolean wantsWhite = requirements != null
+                && requirements.priorities() != null
+                && requirements.priorities().stream().anyMatch(priority -> normalize(priority).contains("white"));
+
+        double score = 60.0;
+        if (wantsRgb) {
+            score += name.contains("rgb") ? 25.0 : -15.0;
+        }
+        if (wantsWhite) {
+            score += name.contains("white") ? 20.0 : -10.0;
+        }
+        if ("pcCase".equals(component) && (name.contains("mesh") || name.contains("airflow"))) {
+            score += 10.0;
+        }
+
+        return Math.max(0.0, Math.min(100.0, score));
+    }
+
+    private double noiseScore(BuildResponse.PartDto part, String component) {
+        if (part == null) {
+            return 50.0;
+        }
+        String name = normalize(part.name());
+        if ("pcCase".equals(component) || "powerSupply".equals(component)) {
+            if (name.contains("silent") || name.contains("quiet")) {
+                return 90.0;
+            }
+            if (name.contains("airflow") || name.contains("mesh")) {
+                return 72.0;
+            }
+        }
+        return 60.0;
+    }
+
+    private double blend(double variantWeight, double intentWeight) {
+        return (variantWeight * 0.45) + (intentWeight * 0.55);
+    }
+
+    private double share(BuildResponse.PartDto part, BigDecimal total) {
+        if (part == null || total == null || total.signum() <= 0 || part.priceKzt() == null) {
+            return 0.0;
+        }
+        return part.priceKzt().divide(total, 6, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    private double shareAgainstBudget(BuildResponse.PartDto part, BigDecimal budget) {
+        if (part == null || budget == null || budget.signum() <= 0 || part.priceKzt() == null) {
+            return 0.0;
+        }
+        return part.priceKzt().divide(budget, 6, RoundingMode.HALF_UP).doubleValue();
     }
 
     private List<String> tradeoffs(String label) {
@@ -901,8 +1648,9 @@ public class FreshBuildRecommendationService {
 
     private BuildResponse.RequirementsDto extractRequirements(String prompt, String currency, String region, Boolean strictBudget) {
         try {
-            if (openAiProperties.apiKey() == null || openAiProperties.apiKey().isBlank()) {
-                return requirementsFromPrompt(prompt, strictBudget);
+            String preprocessedPrompt = preprocessPrompt(prompt);
+            if (!openAiEnabled || openAiProperties.apiKey() == null || openAiProperties.apiKey().isBlank()) {
+                return requirementsFromPrompt(preprocessedPrompt, strictBudget);
             }
 
             String body = objectMapper.writeValueAsString(Map.of(
@@ -910,11 +1658,11 @@ public class FreshBuildRecommendationService {
                     "messages", List.of(
                             Map.of(
                                     "role", "system",
-                                    "content", "Extract PC build requirements as strict JSON. Output JSON only with keys: budgetKzt,useCase,targetResolution,priorities,constraints. constraints keys: brandCpu,brandGpu,rgb,caseSize,wifiRequired."
+                                        "content", "Extract PC build requirements as strict JSON. Output JSON only with keys: budgetKzt,useCase,workloadType,resolutionTarget,refreshRateHz,priorities,constraints. constraints keys: brandCpu,brandGpu,rgb,caseSize,wifiRequired."
                             ),
                             Map.of(
                                     "role", "user",
-                                    "content", "Prompt: " + prompt + "\\nCurrency: " + currency + "\\nRegion: " + region + "\\nStrictBudget: " + strictBudget
+                                    "content", "Prompt: " + preprocessedPrompt + "\\nCurrency: " + currency + "\\nRegion: " + region + "\\nStrictBudget: " + strictBudget
                             )
                     ),
                     "temperature", 0
@@ -932,14 +1680,16 @@ public class FreshBuildRecommendationService {
             String content = root.path("choices").path(0).path("message").path("content").asText("{}");
             JsonNode intentNode = objectMapper.readTree(sanitizeJson(content));
 
-            BigDecimal promptBudget = extractBudgetFromPrompt(prompt);
+                BigDecimal promptBudget = extractBudgetFromPrompt(preprocessedPrompt);
             BigDecimal aiBudget = extractAiBudgetKzt(intentNode, promptBudget);
 
             return new BuildResponse.RequirementsDto(
                     aiBudget.max(promptBudget),
-                    normalizeUseCase(intentNode.path("useCase").asText("mixed"), prompt),
-                    normalizeResolution(intentNode.path("targetResolution").asText("1080p"), prompt),
-                    objectMapper.convertValue(intentNode.path("priorities"), objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)),
+                    normalizeUseCase(intentNode.path("useCase").asText("mixed"), preprocessedPrompt),
+                    normalizeWorkload(intentNode.path("workloadType").asText("mixed"), preprocessedPrompt),
+                    normalizeResolution(intentNode.path("resolutionTarget").asText("1080p"), preprocessedPrompt),
+                    normalizeRefreshRate(intentNode.path("refreshRateHz"), preprocessedPrompt),
+                    normalizePriorities(intentNode.path("priorities"), preprocessedPrompt),
                     new BuildResponse.ConstraintsDto(
                             textOrNull(intentNode.path("constraints").path("brandCpu")),
                             textOrNull(intentNode.path("constraints").path("brandGpu")),
@@ -949,7 +1699,7 @@ public class FreshBuildRecommendationService {
                     ),
                     region == null || region.isBlank() ? "KZ" : region,
                     Boolean.TRUE.equals(strictBudget),
-                    true
+                    false
             );
         } catch (Exception exception) {
             return requirementsFromPrompt(prompt, strictBudget);
@@ -957,7 +1707,7 @@ public class FreshBuildRecommendationService {
     }
 
     private BuildResponse.RequirementsDto requirementsFromPrompt(String prompt, Boolean strictBudget) {
-        String normalized = prompt == null ? "" : prompt.toLowerCase(Locale.ROOT);
+        String normalized = preprocessPrompt(prompt);
 
         BigDecimal budget = extractBudgetFromPrompt(prompt);
         if (budget == null || budget.signum() <= 0 || DEFAULT_BUDGET.compareTo(budget) == 0) {
@@ -978,12 +1728,14 @@ public class FreshBuildRecommendationService {
         return new BuildResponse.RequirementsDto(
                 budget,
                 inferUseCase(normalized),
+                inferWorkload(normalized),
                 inferResolutionHint(normalized),
+                inferRefreshRate(normalized),
                 buildPrioritiesFromPrompt(normalized),
                 new BuildResponse.ConstraintsDto(null, null, false, null, false),
                 "KZ",
                 Boolean.TRUE.equals(strictBudget),
-                true
+            false
         );
     }
 
@@ -1018,19 +1770,28 @@ public class FreshBuildRecommendationService {
     }
 
     private List<BuildResponse.PartDto> fetchParts(String path, int size, PartMapper mapper) {
+        String requestUri = UriComponentsBuilder.fromHttpUrl(partServiceUrl + path)
+                .queryParam("page", 0)
+                .queryParam("size", size)
+                .toUriString();
         try {
-            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(partServiceUrl + path)
-                    .queryParam("page", 0)
-                    .queryParam("size", size);
-
             String response = restClient.get()
-                    .uri(builder.toUriString())
+                    .uri(requestUri)
                     .retrieve()
                     .body(String.class);
 
             JsonNode root = objectMapper.readTree(response);
-            JsonNode content = root.path("content");
+            // Spring Data Page -> { "content": [ ... ] }. Some controllers return a bare array [ ... ].
+            JsonNode content = root.isArray() ? root : root.path("content");
             if (!content.isArray()) {
+                List<String> keys = new ArrayList<>();
+                root.fieldNames().forEachRemaining(keys::add);
+                log.warn(
+                        "part-service JSON is not a paged object or array: path={} uri={} rootIsArray={} rootKeys={}",
+                        path,
+                        requestUri,
+                        root.isArray(),
+                        keys);
                 return List.of();
             }
 
@@ -1038,8 +1799,16 @@ public class FreshBuildRecommendationService {
             for (JsonNode node : content) {
                 parts.add(mapper.map(node));
             }
-            return deduplicateByName(parts);
+            List<BuildResponse.PartDto> deduped = deduplicateByName(parts);
+            if (log.isDebugEnabled()) {
+                log.debug("part-service fetch ok: path={} rawRows={} afterDedupe={}", path, content.size(), deduped.size());
+            }
+            return deduped;
         } catch (Exception exception) {
+            log.warn("part-service fetch failed: path={} uri={} — {}", path, requestUri, exception.toString());
+            if (log.isDebugEnabled()) {
+                log.debug("part-service fetch stack trace", exception);
+            }
             return List.of();
         }
     }
@@ -1075,6 +1844,11 @@ public class FreshBuildRecommendationService {
         int existingScore = partCompletenessScore(existing);
         if (candidateScore != existingScore) {
             return candidateScore > existingScore;
+        }
+        int candidateSocket = candidate.socket() != null && !candidate.socket().isBlank() ? 1 : 0;
+        int existingSocket = existing.socket() != null && !existing.socket().isBlank() ? 1 : 0;
+        if (candidateSocket != existingSocket) {
+            return candidateSocket > existingSocket;
         }
         return safePrice(candidate).compareTo(safePrice(existing)) < 0;
     }
@@ -1121,24 +1895,11 @@ public class FreshBuildRecommendationService {
             String component,
             Boolean strictStockOnly
     ) {
-        if (parts.isEmpty() || !Boolean.TRUE.equals(strictStockOnly)) {
-            return new StockFilterResult(parts, true);
-        }
-
-        boolean hasExplicitStock = parts.stream()
-                .anyMatch(part -> part.stockStatus() != null && !"unknown".equalsIgnoreCase(part.stockStatus()));
-
-        if (!hasExplicitStock) {
-            return new StockFilterResult(parts, false);
-        }
-
-        List<BuildResponse.PartDto> inStock = parts.stream()
-                .filter(part -> "in_stock".equalsIgnoreCase(part.stockStatus()))
-                .toList();
-        return new StockFilterResult(inStock, true);
+        // Stock checking removed: return original candidate list without trust flag
+        return new StockFilterResult(parts, false);
     }
 
-    private BuildResponse.PartDto toCpuPart(JsonNode node, FallbackUsageTracker tracker) {
+    private BuildResponse.PartDto toCpuPart(JsonNode node, FallbackUsageTracker tracker, ResolutionTarget resolutionTarget) {
         String name = node.path("name").asText("CPU");
         HardwareFallbackResolver.ResolvedValue<String> socketResolution = hardwareFallbackResolver.resolveCpuSocket(readText(node, "socket", "cpuSocket"), name);
         if (socketResolution.fallbackUsed()) {
@@ -1155,6 +1916,7 @@ public class FreshBuildRecommendationService {
         if (wattageResolution.fallbackUsed()) {
             tracker.increment();
         }
+        int performanceScore = cpuPerformanceScore(name, resolutionTarget, scoreTier);
         return new BuildResponse.PartDto(
                 partId,
                 name,
@@ -1163,13 +1925,13 @@ public class FreshBuildRecommendationService {
                 null,
                 wattageResolution.value(),
                 null,
-                scoreTier.performanceScore,
+            performanceScore,
                 scoreTier.tierLabel,
                 parseStock(node)
         );
     }
 
-    private BuildResponse.PartDto toGpuPart(JsonNode node, FallbackUsageTracker tracker) {
+    private BuildResponse.PartDto toGpuPart(JsonNode node, FallbackUsageTracker tracker, ResolutionTarget resolutionTarget) {
         String name = node.path("name").asText("GPU");
         Long partId = node.path("id").asLong();
         HardwareFallbackResolver.ResolvedValue<String> tierResolution = hardwareFallbackResolver.resolveGpuTierLabel(name);
@@ -1182,7 +1944,8 @@ public class FreshBuildRecommendationService {
         if (wattageResolution.fallbackUsed()) {
             tracker.increment();
         }
-        String chipset = readText(node, "chipset", "gpuChipset");
+        int performanceScore = gpuPerformanceScore(name, resolutionTarget, scoreTier);
+        String chipset = readText(node, "chipset", "gpuChipset", "family", "model");
         return new BuildResponse.PartDto(
                 partId,
                 name,
@@ -1191,7 +1954,7 @@ public class FreshBuildRecommendationService {
                 null,
                 wattageResolution.value(),
                 chipset,
-                scoreTier.performanceScore,
+                performanceScore,
                 scoreTier.tierLabel,
                 parseStock(node)
         );
@@ -1254,13 +2017,14 @@ public class FreshBuildRecommendationService {
         Tier tier = inferStorageTier(name);
         Long partId = node.path("id").asLong();
         ScoreTier scoreTier = resolveScoreTier(partId, "storage", tier, tracker);
+        Integer normalizedCapacity = readInteger(node, "capacityGb", "storageCapacityGb");
         return new BuildResponse.PartDto(
                 partId,
                 name,
                 kztFromNode(node.path("priceKzt")),
                 null,
                 null,
-                extractStorageCapacity(name),
+            normalizedCapacity == null ? extractStorageCapacity(name) : normalizedCapacity,
                 null,
                 scoreTier.performanceScore,
                 scoreTier.tierLabel,
@@ -1311,7 +2075,7 @@ public class FreshBuildRecommendationService {
         );
     }
 
-    private BuildResponse.PartDto toCpuDbPart(JsonNode node, FallbackUsageTracker tracker) {
+    private BuildResponse.PartDto toCpuDbPart(JsonNode node, FallbackUsageTracker tracker, ResolutionTarget resolutionTarget) {
         String name = node.path("name").asText("CPU");
         Long partId = node.path("id").asLong();
         HardwareFallbackResolver.ResolvedValue<String> socketResolution = hardwareFallbackResolver.resolveCpuSocket(readText(node, "socket"), name);
@@ -1330,6 +2094,7 @@ public class FreshBuildRecommendationService {
         }
         Tier inferredTier = Tier.fromLabel(tierResolution.value());
         ScoreTier scoreTier = resolveScoreTier(partId, "cpu", inferredTier, tracker);
+        int performanceScore = cpuPerformanceScore(name, resolutionTarget, scoreTier);
         return new BuildResponse.PartDto(
                 partId,
                 name,
@@ -1338,7 +2103,7 @@ public class FreshBuildRecommendationService {
                 null,
                 wattageResolution.value(),
                 textOrNull(node.path("graphics")),
-                scoreTier.performanceScore,
+            performanceScore,
                 scoreTier.tierLabel,
                 parseStock(node)
         );
@@ -1357,6 +2122,7 @@ public class FreshBuildRecommendationService {
         }
         Tier inferredTier = Tier.fromLabel(tierResolution.value());
         ScoreTier scoreTier = resolveScoreTier(partId, "gpu", inferredTier, tracker);
+        int performanceScore = gpuPerformanceScore(name, ResolutionTarget.P1080, scoreTier);
         return new BuildResponse.PartDto(
                 partId,
                 name,
@@ -1365,10 +2131,38 @@ public class FreshBuildRecommendationService {
                 null,
                 wattageResolution.value(),
                 textOrNull(node.path("chipset")),
-                scoreTier.performanceScore,
+                performanceScore,
                 scoreTier.tierLabel,
                 parseStock(node)
         );
+    }
+
+    private int cpuPerformanceScore(String cpuName, ResolutionTarget resolutionTarget, ScoreTier fallbackScore) {
+        CpuBenchmark benchmark = cpuBenchmarkService.findByName(cpuName).orElse(null);
+        double score = benchmark != null
+                ? getCpuPerformanceScore(benchmark, resolutionTarget)
+                : inferCpuScore(fallbackScore);
+        return (int) Math.round(score);
+    }
+
+    private double getCpuPerformanceScore(CpuBenchmark cpu, ResolutionTarget resolutionTarget) {
+        if (cpu == null) {
+            return 0.0;
+        }
+
+        ResolutionTarget target = resolutionTarget == null ? ResolutionTarget.P1080 : resolutionTarget;
+        return switch (target) {
+            case P1080 -> cpu.getScore1080p() == null ? 0.0 : cpu.getScore1080p();
+            case P1440 -> cpu.getScore1440p() == null ? 0.0 : cpu.getScore1440p();
+            case P4K -> cpu.getScore1440p() == null ? 0.0 : cpu.getScore1440p();
+        };
+    }
+
+    private double inferCpuScore(ScoreTier fallbackScore) {
+        if (fallbackScore != null && fallbackScore.performanceScore > 0) {
+            return fallbackScore.performanceScore;
+        }
+        return scoreFromTier(Tier.MID);
     }
 
     private BuildResponse.PartDto toMotherboardDbPart(JsonNode node, FallbackUsageTracker tracker) {
@@ -1396,6 +2190,83 @@ public class FreshBuildRecommendationService {
                 parseStock(node)
         );
     }
+
+    private BuildResponse.PartDto toCpuMatchPart(JsonNode node, FallbackUsageTracker tracker, ResolutionTarget resolutionTarget) {
+        String name = node.path("name").asText("CPU");
+        Long partId = node.path("id").asLong();
+        HardwareFallbackResolver.ResolvedValue<String> socketResolution = hardwareFallbackResolver.resolveCpuSocket(readText(node, "socket"), name);
+        if (socketResolution.fallbackUsed()) tracker.increment();
+        HardwareFallbackResolver.ResolvedValue<String> tierResolution = hardwareFallbackResolver.resolveCpuTierLabel(name);
+        if (tierResolution.fallbackUsed()) tracker.increment();
+        HardwareFallbackResolver.ResolvedValue<Integer> wattageResolution = node.path("tdp").isNumber()
+            ? new HardwareFallbackResolver.ResolvedValue<>(node.path("tdp").intValue(), false)
+            : hardwareFallbackResolver.resolveCpuWattage(node, name);
+        if (wattageResolution.fallbackUsed()) tracker.increment();
+        Tier inferredTier = Tier.fromLabel(tierResolution.value());
+        ScoreTier scoreTier = resolveScoreTier(partId, "cpu", inferredTier, tracker);
+        int performanceScore = cpuPerformanceScore(name, resolutionTarget, scoreTier);
+        return new BuildResponse.PartDto(
+            partId,
+            name,
+            // price is stored in KZT on matched records
+            kztFromNode(node.has("priceKzt") ? node.path("priceKzt") : node.path("price_kzt")),
+            socketResolution.value(),
+            null,
+            wattageResolution.value(),
+            textOrNull(node.path("graphics")),
+            performanceScore,
+            scoreTier.tierLabel,
+            parseStock(node)
+        );
+    }
+
+        private BuildResponse.PartDto toGpuMatchPart(JsonNode node, FallbackUsageTracker tracker, ResolutionTarget resolutionTarget) {
+        String name = node.path("name").asText("GPU");
+        Long partId = node.path("id").asLong();
+        HardwareFallbackResolver.ResolvedValue<String> tierResolution = hardwareFallbackResolver.resolveGpuTierLabel(name);
+        if (tierResolution.fallbackUsed()) tracker.increment();
+        HardwareFallbackResolver.ResolvedValue<Integer> wattageResolution = node.path("tdp").isNumber()
+            ? new HardwareFallbackResolver.ResolvedValue<>(node.path("tdp").intValue(), false)
+            : hardwareFallbackResolver.resolveGpuWattage(node, name);
+        if (wattageResolution.fallbackUsed()) tracker.increment();
+        Tier inferredTier = Tier.fromLabel(tierResolution.value());
+        ScoreTier scoreTier = resolveScoreTier(partId, "gpu", inferredTier, tracker);
+        int performanceScore = gpuPerformanceScore(name, resolutionTarget, scoreTier);
+        return new BuildResponse.PartDto(
+            partId,
+            name,
+            kztFromNode(node.has("priceKzt") ? node.path("priceKzt") : node.path("price_kzt")),
+            null,
+            null,
+            wattageResolution.value(),
+            textOrNull(node.path("chipset")),
+            performanceScore,
+            scoreTier.tierLabel,
+            parseStock(node)
+        );
+        }
+
+        private BuildResponse.PartDto toMotherboardMatchPart(JsonNode node, FallbackUsageTracker tracker) {
+        String name = node.path("name").asText("Motherboard");
+        Long partId = node.path("id").asLong();
+        String socket = readText(node, "socket", "mbSocket", "cpuSocket");
+        if (socket == null || socket.isBlank()) tracker.increment();
+        String memoryType = resolveMotherboardMemoryType(node, name, tracker);
+        if (memoryType == null) tracker.increment();
+        ScoreTier scoreTier = resolveScoreTier(partId, "motherboard", Tier.MID, tracker);
+        return new BuildResponse.PartDto(
+            partId,
+            name,
+            kztFromNode(node.has("priceKzt") ? node.path("priceKzt") : node.path("price_kzt")),
+            socket,
+            memoryType,
+            null,
+            textOrNull(node.path("formFactor")),
+            scoreTier.performanceScore,
+            scoreTier.tierLabel,
+            parseStock(node)
+        );
+        }
 
     private BuildResponse.PartDto toMemoryDbPart(JsonNode node, FallbackUsageTracker tracker) {
         String name = node.path("name").asText("Memory");
@@ -1527,6 +2398,19 @@ public class FreshBuildRecommendationService {
         return normalizeDdrLabel(fallback.value());
     }
 
+    /** DDR type from part fields, falling back to listing name (matches evaluateChecks). */
+    private String effectiveMemoryDdrType(BuildResponse.PartDto memory) {
+        if (memory == null) {
+            return null;
+        }
+        String fromField = normalizeDdrLabel(memory.memoryType());
+        if (fromField != null && (fromField.equals("DDR3") || fromField.equals("DDR4") || fromField.equals("DDR5"))) {
+            return fromField;
+        }
+        HardwareFallbackResolver.ResolvedValue<String> resolved = hardwareFallbackResolver.resolveMemoryTypeFromName(memory.name());
+        return normalizeDdrLabel(resolved.value());
+    }
+
     private String normalizeDdrLabel(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -1651,6 +2535,11 @@ public class FreshBuildRecommendationService {
             return explicitKzt.max(new BigDecimal("150000"));
         }
 
+        BigDecimal scaledKzt = extractScaledKztAmount(prompt);
+        if (scaledKzt != null) {
+            return scaledKzt.max(new BigDecimal("150000"));
+        }
+
         BigDecimal explicitUsd = extractExplicitCurrencyAmount(prompt, EXPLICIT_USD_PATTERN, true);
         if (explicitUsd != null) {
             return explicitUsd.max(new BigDecimal("150000"));
@@ -1697,12 +2586,51 @@ public class FreshBuildRecommendationService {
         return best;
     }
 
+    private BigDecimal extractScaledKztAmount(String prompt) {
+        Matcher matcher = EXPLICIT_KZT_SCALED_PATTERN.matcher(prompt);
+        BigDecimal best = null;
+
+        while (matcher.find()) {
+            try {
+                BigDecimal amount = new BigDecimal(matcher.group(1));
+                String unit = matcher.group(2).toLowerCase(Locale.ROOT);
+
+                BigDecimal multiplier;
+                if ("m".equals(unit) || "млн".equals(unit)) {
+                    multiplier = new BigDecimal("1000000");
+                } else {
+                    multiplier = new BigDecimal("1000");
+                }
+
+                BigDecimal value = amount.multiply(multiplier).setScale(0, RoundingMode.HALF_UP);
+                if (best == null || value.compareTo(best) > 0) {
+                    best = value;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        return best;
+    }
+
     private String readText(JsonNode node, String... fieldNames) {
+        JsonNode normalizedNode = normalizedSpecsNode(node);
+        if (normalizedNode != null) {
+            for (String fieldName : fieldNames) {
+                JsonNode valueNode = normalizedNode.path(fieldName);
+                if (!valueNode.isMissingNode() && !valueNode.isNull()) {
+                    String value = valueNode.asText("").trim();
+                    if (!value.isBlank()) {
+                        return value;
+                    }
+                }
+            }
+        }
+
         for (String fieldName : fieldNames) {
             JsonNode valueNode = node.path(fieldName);
             if (!valueNode.isMissingNode() && !valueNode.isNull()) {
-                String value = valueNode.asText(""
-                ).trim();
+                String value = valueNode.asText("").trim();
                 if (!value.isBlank()) {
                     return value;
                 }
@@ -1712,6 +2640,28 @@ public class FreshBuildRecommendationService {
     }
 
     private Integer readInteger(JsonNode node, String... fieldNames) {
+        JsonNode normalizedNode = normalizedSpecsNode(node);
+        if (normalizedNode != null) {
+            for (String fieldName : fieldNames) {
+                JsonNode valueNode = normalizedNode.path(fieldName);
+                if (!valueNode.isMissingNode() && !valueNode.isNull()) {
+                    if (valueNode.isInt() || valueNode.isLong()) {
+                        return valueNode.intValue();
+                    }
+                    if (valueNode.isNumber()) {
+                        return valueNode.numberValue().intValue();
+                    }
+                    String raw = valueNode.asText("").replaceAll("[^0-9]", "").trim();
+                    if (!raw.isBlank()) {
+                        try {
+                            return Integer.parseInt(raw);
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                }
+            }
+        }
+
         for (String fieldName : fieldNames) {
             JsonNode valueNode = node.path(fieldName);
             if (!valueNode.isMissingNode() && !valueNode.isNull()) {
@@ -1733,37 +2683,39 @@ public class FreshBuildRecommendationService {
         return null;
     }
 
-    private String parseMemoryTypeFromName(String text) {
-        if (text == null) {
+    private JsonNode normalizedSpecsNode(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
             return null;
         }
-        String upper = text.toUpperCase(Locale.ROOT);
-        if (upper.contains("DDR5")) {
-            return "DDR5";
+
+        JsonNode normalizedJsonNode = node.path("normalizedSpecsJson");
+        if (normalizedJsonNode == null || normalizedJsonNode.isMissingNode() || normalizedJsonNode.isNull() || normalizedJsonNode.asText("").isBlank()) {
+            normalizedJsonNode = node.path("normalized_specs_json");
         }
-        if (upper.contains("DDR4")) {
-            return "DDR4";
+
+        if (normalizedJsonNode == null || normalizedJsonNode.isMissingNode() || normalizedJsonNode.isNull()) {
+            return null;
         }
-        return null;
+
+        String raw = normalizedJsonNode.asText("").trim();
+        if (raw.isBlank()) {
+            return null;
+        }
+
+        try {
+            return objectMapper.readTree(raw);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String powerEstimateConfidence(BuildResponse.PartDto cpu, BuildResponse.PartDto gpu) {
-        boolean cpuFromLookup = isLookupMappedWattage(cpu == null ? null : cpu.name(), CPU_WATTAGE_LOOKUP);
-        boolean gpuFromLookup = isLookupMappedWattage(gpu == null ? null : gpu.name(), GPU_WATTAGE_LOOKUP);
-        if (cpuFromLookup && gpuFromLookup) {
+        boolean cpuKnown = cpu != null && cpu.wattage() != null && cpu.wattage() > 0;
+        boolean gpuKnown = gpu != null && gpu.wattage() != null && gpu.wattage() > 0;
+        if (cpuKnown && gpuKnown) {
             return "medium";
         }
         return "low";
-    }
-
-    private boolean isLookupMappedWattage(String name, Map<String, Integer> lookup) {
-        String normalizedName = normalize(name);
-        for (String key : lookup.keySet()) {
-            if (normalizedName.contains(key)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private BigDecimal performanceMappingCoverage(List<BuildResponse.BuildVariantDto> variants) {
@@ -1841,16 +2793,16 @@ public class FreshBuildRecommendationService {
         return "mixed";
     }
 
-    private String inferResolutionHint(String normalized) {
+    private ResolutionTarget inferResolutionHint(String normalized) {
         if (normalized == null || normalized.isBlank()) {
-            return "1080p";
+            return ResolutionTarget.P1080;
         }
 
         if (normalized.contains("4k")) {
-            return "4k";
+            return ResolutionTarget.P4K;
         }
         if (normalized.contains("1440")) {
-            return "1440p";
+            return ResolutionTarget.P1440;
         }
 
         if (normalized.contains("path tracing")
@@ -1859,10 +2811,10 @@ public class FreshBuildRecommendationService {
                 || normalized.contains("high-end")
                 || normalized.contains("ultra")
                 || normalized.contains("max settings")) {
-            return "1440p";
+            return ResolutionTarget.P1440;
         }
 
-        return "1080p";
+        return ResolutionTarget.P1080;
     }
 
     private String normalizeUseCase(String aiUseCase, String prompt) {
@@ -1876,10 +2828,10 @@ public class FreshBuildRecommendationService {
         return aiUseCase.toLowerCase(Locale.ROOT);
     }
 
-    private String normalizeResolution(String aiResolution, String prompt) {
+    private ResolutionTarget normalizeResolution(String aiResolution, String prompt) {
         String normalizedPrompt = prompt == null ? "" : prompt.toLowerCase(Locale.ROOT);
-        String hint = inferResolutionHint(normalizedPrompt);
-        if (!"1080p".equalsIgnoreCase(hint)) {
+        ResolutionTarget hint = inferResolutionHint(normalizedPrompt);
+        if (hint != ResolutionTarget.P1080) {
             return hint;
         }
         if (aiResolution == null || aiResolution.isBlank()) {
@@ -1887,12 +2839,159 @@ public class FreshBuildRecommendationService {
         }
         String normalized = aiResolution.toLowerCase(Locale.ROOT);
         if (normalized.contains("1440")) {
-            return "1440p";
+            return ResolutionTarget.P1440;
         }
         if (normalized.contains("4k")) {
-            return "4k";
+            return ResolutionTarget.P4K;
         }
-        return "1080p";
+        return ResolutionTarget.P1080;
+    }
+
+    private WorkloadType inferWorkload(String normalizedPrompt) {
+        if (normalizedPrompt == null || normalizedPrompt.isBlank()) {
+            return WorkloadType.MIXED;
+        }
+        if (normalizedPrompt.contains("esport") || normalizedPrompt.contains("competitive") || normalizedPrompt.contains("valorant") || normalizedPrompt.contains("cs2")) {
+            return WorkloadType.ESPORTS;
+        }
+        if (normalizedPrompt.contains("aaa")
+                || normalizedPrompt.contains("single player")
+                || normalizedPrompt.contains("ultra")
+                || normalizedPrompt.contains("ray tracing")
+                || normalizedPrompt.contains("path tracing")
+                || normalizedPrompt.contains("4k")
+                || normalizedPrompt.contains("1440")) {
+            return WorkloadType.AAA;
+        }
+        return WorkloadType.fromText(normalizedPrompt);
+    }
+
+    private WorkloadType normalizeWorkload(String aiWorkload, String prompt) {
+        WorkloadType promptWorkload = inferWorkload(prompt == null ? null : prompt.toLowerCase(Locale.ROOT));
+        if (promptWorkload != WorkloadType.MIXED) {
+            return promptWorkload;
+        }
+        WorkloadType aiParsed = WorkloadType.fromText(aiWorkload);
+        return aiParsed == WorkloadType.MIXED ? WorkloadType.MIXED : aiParsed;
+    }
+
+    private Integer inferRefreshRate(String normalizedPrompt) {
+        if (normalizedPrompt == null || normalizedPrompt.isBlank()) {
+            return 60;
+        }
+
+        Matcher refreshMatcher = Pattern.compile("(?i)(\\d{2,3})\\s*hz").matcher(normalizedPrompt);
+        if (refreshMatcher.find()) {
+            try {
+                return Integer.parseInt(refreshMatcher.group(1));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        if (normalizedPrompt.contains("esport") || normalizedPrompt.contains("competitive") || normalizedPrompt.contains("high refresh")) {
+            return 240;
+        }
+        if (normalizedPrompt.contains("pure gaming") || normalizedPrompt.contains("max fps") || normalizedPrompt.contains("gaming performance")) {
+            return 144;
+        }
+        if (normalizedPrompt.contains("144hz") || normalizedPrompt.contains("165hz") || normalizedPrompt.contains("240hz")) {
+            return 144;
+        }
+        if (normalizedPrompt.contains("4k") || normalizedPrompt.contains("ultra") || normalizedPrompt.contains("max settings")) {
+            return 60;
+        }
+        return 60;
+    }
+
+    private Integer normalizeRefreshRate(JsonNode refreshNode, String prompt) {
+        if (refreshNode != null && refreshNode.canConvertToInt()) {
+            int value = refreshNode.intValue();
+            return value > 0 ? value : inferRefreshRate(prompt == null ? null : prompt.toLowerCase(Locale.ROOT));
+        }
+        if (refreshNode != null) {
+            String raw = refreshNode.asText("");
+            if (!raw.isBlank()) {
+                Matcher matcher = Pattern.compile("(\\d{2,3})").matcher(raw);
+                if (matcher.find()) {
+                    try {
+                        return Integer.parseInt(matcher.group(1));
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        }
+        return inferRefreshRate(prompt == null ? null : prompt.toLowerCase(Locale.ROOT));
+    }
+
+    private double budgetPressure(BigDecimal budget) {
+        if (budget == null || budget.signum() <= 0) {
+            return 0.0;
+        }
+        if (budget.compareTo(new BigDecimal("350000")) < 0) {
+            return 1.0;
+        }
+        if (budget.compareTo(new BigDecimal("550000")) < 0) {
+            return 0.70;
+        }
+        if (budget.compareTo(new BigDecimal("850000")) < 0) {
+            return 0.35;
+        }
+        return 0.10;
+    }
+
+    private double refreshPressure(int refreshRateHz) {
+        if (refreshRateHz >= 240) {
+            return 1.0;
+        }
+        if (refreshRateHz >= 165) {
+            return 0.85;
+        }
+        if (refreshRateHz >= 144) {
+            return 0.75;
+        }
+        if (refreshRateHz >= 120) {
+            return 0.55;
+        }
+        if (refreshRateHz >= 75) {
+            return 0.25;
+        }
+        return 0.10;
+    }
+
+    private double normalizeWeight(double value) {
+        return Math.max(0.0, Math.min(1.0, value));
+    }
+
+    private String resolutionLabel(ResolutionTarget resolutionTarget) {
+        return resolutionTarget == null ? ResolutionTarget.P1080.label() : resolutionTarget.label();
+    }
+
+    private int gpuPerformanceScore(String gpuName, ResolutionTarget resolutionTarget, ScoreTier fallbackScore) {
+        GpuBenchmark benchmark = gpuBenchmarkService.findByName(gpuName).orElse(null);
+        double score = benchmark != null
+                ? getGpuPerformanceScore(benchmark, resolutionTarget)
+                : inferGpuScore(gpuName, fallbackScore);
+        return (int) Math.round(score);
+    }
+
+    private double getGpuPerformanceScore(GpuBenchmark gpu, ResolutionTarget resolutionTarget) {
+        if (gpu == null) {
+            return 0.0;
+        }
+        ResolutionTarget target = resolutionTarget == null ? ResolutionTarget.P1080 : resolutionTarget;
+        return switch (target) {
+            case P1080 -> gpu.getScore1080p() == null ? 0.0 : gpu.getScore1080p();
+            case P1440 -> gpu.getScore1440p() == null ? 0.0 : gpu.getScore1440p();
+            case P4K -> gpu.getScore4k() == null ? 0.0 : gpu.getScore4k();
+        };
+    }
+
+    private double inferGpuScore(String gpuName, ScoreTier fallbackScore) {
+        if (fallbackScore != null && fallbackScore.performanceScore > 0) {
+            return fallbackScore.performanceScore;
+        }
+        String tierLabel = hardwareFallbackResolver.resolveGpuTierLabel(gpuName).value();
+        return scoreFromTier(Tier.fromLabel(tierLabel));
     }
 
     private List<String> buildPrioritiesFromPrompt(String normalizedPrompt) {
@@ -1926,6 +3025,144 @@ public class FreshBuildRecommendationService {
             priorities.add("performance");
         }
         return List.copyOf(priorities);
+    }
+
+    private List<String> normalizePriorities(JsonNode prioritiesNode, String prompt) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+
+        if (prioritiesNode != null && prioritiesNode.isArray()) {
+            for (JsonNode node : prioritiesNode) {
+                String priority = node == null ? null : node.asText();
+                if (priority == null || priority.isBlank()) {
+                    continue;
+                }
+                merged.add(priority.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+
+        for (String inferred : buildPrioritiesFromPrompt(prompt == null ? "" : prompt.toLowerCase(Locale.ROOT))) {
+            merged.add(inferred.toLowerCase(Locale.ROOT));
+        }
+
+        if (merged.isEmpty()) {
+            merged.add("value");
+            merged.add("performance");
+        }
+
+        return List.copyOf(merged);
+    }
+
+    private String preprocessPrompt(String prompt) {
+        if (prompt == null) {
+            return "";
+        }
+        return prompt.toLowerCase(Locale.ROOT)
+                .replace("fullhd", "1080p")
+                .replace("fhd", "1080p")
+                .replace("qhd", "1440p")
+                .replace("uhd", "4k")
+                .replace("2k", "1440p");
+    }
+
+    /**
+     * Minimum hardware floors when listing metadata can be parsed from names.
+     * Entry 1080p budgets use relaxed floors so budget gaming builds can clear compatibility checks.
+     */
+    private record GamingHardwareFloors(int minRamGb, int minGpuVramGb, int minStorageGb) {
+    }
+
+    private GamingHardwareFloors gamingHardwareFloors(BuildResponse.RequirementsDto requirements) {
+        ResolutionTarget res = requirements.resolutionTarget() != null
+                ? requirements.resolutionTarget()
+                : ResolutionTarget.P1080;
+        boolean highRes = res == ResolutionTarget.P1440 || res == ResolutionTarget.P4K;
+        BigDecimal budget = requirements.budgetKzt();
+        BigDecimal effective = budget == null || budget.signum() <= 0 ? DEFAULT_BUDGET : budget;
+        String band = resolveBudgetBand(effective);
+
+        if (highRes) {
+            return new GamingHardwareFloors(16, 8, 500);
+        }
+        boolean entryLike = "entry".equals(band) || effective.compareTo(new BigDecimal("350000")) < 0;
+        if (entryLike) {
+            return new GamingHardwareFloors(8, 4, 250);
+        }
+        return new GamingHardwareFloors(16, 8, 500);
+    }
+
+    private boolean meetsGamingMinimums(
+            BuildResponse.RequirementsDto requirements,
+            BuildResponse.PartDto gpu,
+            BuildResponse.PartDto memory,
+            BuildResponse.PartDto storage
+    ) {
+        if (requirements == null || requirements.useCase() == null || !"gaming".equalsIgnoreCase(requirements.useCase())) {
+            return true;
+        }
+
+        GamingHardwareFloors floors = gamingHardwareFloors(requirements);
+        int gpuVramGb = extractGpuVramGb(gpu == null ? null : gpu.name());
+        int ramGb = extractMemoryCapacityGb(memory == null ? null : memory.name());
+        int storageGb = storage == null
+                ? 0
+                : Math.max(safeInt(storage.wattage(), 0), safeInt(extractStorageCapacity(storage.name()), 0));
+        String memoryType = normalize(memory == null ? null : memory.memoryType());
+
+        if (memoryType.contains("ddr3")) {
+            return false;
+        }
+        if (gpuVramGb > 0 && gpuVramGb < floors.minGpuVramGb()) {
+            return false;
+        }
+        if (ramGb > 0 && ramGb < floors.minRamGb()) {
+            return false;
+        }
+        return storageGb <= 0 || storageGb >= floors.minStorageGb();
+    }
+
+    private int extractGpuVramGb(String text) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+        Matcher matcher = Pattern.compile("(\\d{1,2})\\s*gb", Pattern.CASE_INSENSITIVE).matcher(text);
+        int best = 0;
+        while (matcher.find()) {
+            try {
+                int value = Integer.parseInt(matcher.group(1));
+                if (value > best) {
+                    best = value;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return best;
+    }
+
+    private int extractMemoryCapacityGb(String text) {
+        if (text == null || text.isBlank()) {
+            return 0;
+        }
+
+        Matcher kits = Pattern.compile("(\\d{1,2})\\s*[xх]\\s*(\\d{1,2})\\s*gb", Pattern.CASE_INSENSITIVE).matcher(text);
+        if (kits.find()) {
+            try {
+                return Integer.parseInt(kits.group(1)) * Integer.parseInt(kits.group(2));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        Matcher single = Pattern.compile("(\\d{1,3})\\s*gb", Pattern.CASE_INSENSITIVE).matcher(text);
+        int best = 0;
+        while (single.find()) {
+            try {
+                int value = Integer.parseInt(single.group(1));
+                if (value > best) {
+                    best = value;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return best;
     }
 
     private String resolveBudgetBand(BigDecimal budgetKzt) {
@@ -2098,7 +3335,33 @@ public class FreshBuildRecommendationService {
     ) {
     }
 
-    private record ComponentPools(
+            private record IntentScoringProfile(
+                double gpuWeight,
+                double cpuWeight,
+                double ramWeight,
+                double storageWeight,
+                double motherboardWeight,
+                double psuWeight,
+                double caseWeight,
+                double valueWeight,
+                double rawPerformanceWeight,
+                double upgradeWeight,
+                double efficiencyWeight,
+                double aestheticWeight,
+                double noiseWeight,
+                double bottleneckPenaltyWeight,
+                double budgetEfficiencyWeight,
+                double gpuMinShare,
+                double gpuMaxShare,
+                double cpuMinShare,
+                double cpuMaxShare,
+                double ramMinShare,
+                double ramMaxShare,
+                double motherboardMaxShare
+            ) {
+            }
+
+        private record ComponentPools(
             List<BuildResponse.PartDto> cpus,
             List<BuildResponse.PartDto> gpus,
             List<BuildResponse.PartDto> motherboards,
@@ -2106,10 +3369,9 @@ public class FreshBuildRecommendationService {
             List<BuildResponse.PartDto> storages,
             List<BuildResponse.PartDto> psus,
             List<BuildResponse.PartDto> cases,
-            boolean stockValidationTrusted,
             int fallbackInferenceCount
-    ) {
-    }
+        ) {
+        }
 
     private record VariantCandidate(
             String label,

@@ -1,0 +1,201 @@
+{
+  "strategies": [
+    {
+      "partType": "cpu",
+      "retailer": "shop.kz",
+      "queries": [
+        "AMD Ryzen 5",
+        "AMD Ryzen 7",
+        "Intel Core i5",
+        "Intel Core i7"
+      ],
+      "minPrice": 50000,
+      "maxPrice": 250000
+    },
+    {
+      "partType": "cpu",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz AMD Ryzen 5",
+        "::kaspi.kz AMD Ryzen 7",
+        "::kaspi.kz Intel Core i5",
+        "::kaspi.kz Intel Core i7"
+      ],
+      "minPrice": 50000,
+      "maxPrice": 250000
+    },
+    {
+      "partType": "gpu",
+      "retailer": "shop.kz",
+      "queries": [
+        "RTX 4070",
+        "RTX 4080",
+        "RTX 4090",
+        "RX 7700 XT",
+        "RX 7800 XT"
+      ],
+      "minPrice": 50000,
+      "maxPrice": 500000
+    },
+    {
+      "partType": "gpu",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz RTX 4070",
+        "::kaspi.kz RTX 4080",
+        "::kaspi.kz RTX 4090",
+        "::kaspi.kz RX 7700 XT",
+        "::kaspi.kz RX 7800 XT"
+      ],
+      "minPrice": 50000,
+      "maxPrice": 500000
+    },
+    {
+      "partType": "motherboard",
+      "retailer": "shop.kz",
+      "queries": [
+        "B550",
+        "B650",
+        "X670",
+        "Z790",
+        "Z890"
+      ],
+      "minPrice": 30000,
+      "maxPrice": 150000
+    },
+    {
+      "partType": "motherboard",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz B550",
+        "::kaspi.kz B650",
+        "::kaspi.kz X670",
+        "::kaspi.kz Z790",
+        "::kaspi.kz Z890"
+      ],
+      "minPrice": 30000,
+      "maxPrice": 150000
+    },
+    {
+      "partType": "memory",
+      "retailer": "shop.kz",
+      "queries": [
+        "DDR5 32GB",
+        "DDR5 16GB",
+        "DDR4 32GB",
+        "DDR4 16GB"
+      ],
+      "minPrice": 20000,
+      "maxPrice": 80000
+    },
+    {
+      "partType": "memory",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz DDR5 32GB",
+        "::kaspi.kz DDR5 16GB",
+        "::kaspi.kz DDR4 32GB",
+        "::kaspi.kz DDR4 16GB"
+      ],
+      "minPrice": 20000,
+      "maxPrice": 80000
+    },
+    {
+      "partType": "internal_memory",
+      "retailer": "shop.kz",
+      "queries": [
+        "SSD NVMe 1TB",
+        "SSD NVMe 2TB",
+        "SSD SATA 1TB",
+        "SSD SATA 2TB"
+      ],
+      "minPrice": 15000,
+      "maxPrice": 100000
+    },
+    {
+      "partType": "internal_memory",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz SSD NVMe 1TB",
+        "::kaspi.kz SSD NVMe 2TB",
+        "::kaspi.kz SSD SATA 1TB",
+        "::kaspi.kz SSD SATA 2TB"
+      ],
+      "minPrice": 15000,
+      "maxPrice": 100000
+    },
+    {
+      "partType": "power_supply",
+      "retailer": "shop.kz",
+      "queries": [
+        "1000W 80+",
+        "850W 80+",
+        "750W 80+",
+        "650W 80+"
+      ],
+      "minPrice": 40000,
+      "maxPrice": 150000
+    },
+    {
+      "partType": "power_supply",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz 1000W 80+",
+        "::kaspi.kz 850W 80+",
+        "::kaspi.kz 750W 80+",
+        "::kaspi.kz 650W 80+"
+      ],
+      "minPrice": 40000,
+      "maxPrice": 150000
+    },
+    {
+      "partType": "cpu_cooler",
+      "retailer": "shop.kz",
+      "queries": [
+        "AIO cooler 240mm",
+        "AIO cooler 360mm",
+        "air cooler",
+        "tower cooler"
+      ],
+      "minPrice": 10000,
+      "maxPrice": 80000
+    },
+    {
+      "partType": "cpu_cooler",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz AIO cooler 240mm",
+        "::kaspi.kz AIO cooler 360mm",
+        "::kaspi.kz air cooler",
+        "::kaspi.kz tower cooler"
+      ],
+      "minPrice": 10000,
+      "maxPrice": 80000
+    },
+    {
+      "partType": "pc_case",
+      "retailer": "shop.kz",
+      "queries": [
+        "ATX case",
+        "mid tower",
+        "full tower",
+        "tempered glass"
+      ],
+      "minPrice": 20000,
+      "maxPrice": 100000
+    }
+    ,
+    {
+      "partType": "pc_case",
+      "retailer": "kaspi.kz",
+      "queries": [
+        "::kaspi.kz ATX case",
+        "::kaspi.kz mid tower",
+        "::kaspi.kz full tower",
+        "::kaspi.kz tempered glass"
+      ],
+      "minPrice": 20000,
+      "maxPrice": 100000
+    }
+  ]
+}

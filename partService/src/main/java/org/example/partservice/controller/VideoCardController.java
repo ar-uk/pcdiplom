@@ -19,16 +19,15 @@ public class VideoCardController {
     private final VideoCardService videoCardService;
 
     /**
-     * GET /api/gpu
-     * Optional query params:
-     *   name, minPrice, maxPrice, chipset, minMemoryGb, maxMemoryGb,
-     *   minBoostClock, maxLengthMm, color,
-     *   page, size, sort
-     *
-     * Examples:
-     *   /api/gpu?chipset=RTX&minMemoryGb=8&maxPrice=500
-     *   /api/gpu?maxLengthMm=300&sort=priceUsd,asc
-     */
+     GET /api/gpu
+     Optional query params:
+     name, minPrice, maxPrice, chipset, minMemoryGb, maxMemoryGb,
+     minBoostClock, maxLengthMm, color,
+     page, size, sort
+     Examples:
+     /api/gpu?chipset=RTX&minMemoryGb=8&maxPrice=500
+     /api/gpu?maxLengthMm=300&sort=priceUsd,asc
+     **/
     @GetMapping
     public Page<VideoCard> getAll(
             @RequestParam(required = false) String name,

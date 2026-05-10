@@ -18,17 +18,6 @@ public class PowerSupplyController {
 
     private final PowerSupplyService powerSupplyService;
 
-    /**
-     * GET /api/psu
-     * Optional query params:
-     *   name, minPrice, maxPrice, psuType, efficiency,
-     *   minWattage, maxWattage, modular, color,
-     *   page, size, sort
-     *
-     * Examples:
-     *   /api/psu?minWattage=650&efficiency=80%2B+Gold
-     *   /api/psu?modular=Full&maxPrice=120&sort=wattage,desc
-     */
     @GetMapping
     public Page<PowerSupply> getAll(
             @RequestParam(required = false) String name,
