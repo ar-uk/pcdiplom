@@ -91,13 +91,19 @@ public class ComponentCompatibilityService {
 
         if (cpu != null && gpu != null && psu != null) {
             int psuWatts = safeInt(psu.wattage(), 0);
-            if (!sufficientPsWattage(psuWatts, cpu.name(), gpu.name(), true)) {
-                warnings.add("PSU wattage (" + psuWatts + "W) may be tight for CPU + GPU power draw");
+            int cpuWatts = resolveCpuTdp(cpu);
+            int gpuWatts = resolveGpuTdp(gpu);
+            int totalEstimated = cpuWatts + gpuWatts;
+            int required = psuPreferredWattage(totalEstimated);
+            if (psuWatts < required) {
+                warnings.add("PSU wattage (" + psuWatts + "W) may be tight for CPU + GPU power draw — estimated " + totalEstimated + "W");
             }
         }
 
         if (cpu != null && gpu != null) {
-            if (!cpuGpuPairingAllowed(cpu.name(), gpu.name(), "gaming", "1440p")) {
+            Tier cpuTier = tierOfPart(cpu);
+            Tier gpuTier = tierOfPart(gpu);
+            if (!cpuGpuPairingAllowed(cpuTier, gpuTier, "gaming", "1440p")) {
                 warnings.add("CPU and GPU tier mismatch - consider adjusting component selection");
             }
         }
@@ -240,6 +246,36 @@ public class ComponentCompatibilityService {
         if (upper.contains("RX 6700") || upper.contains("RX 6750")) return 230;
         if (upper.contains("RX 6600")) return 132;
         return 200; // Default
+    }
+
+    private int resolveCpuTdp(BuildResponse.PartDto cpu) {
+        if (cpu == null) return 65;
+        if (cpu.wattage() != null && cpu.wattage() > 0) return cpu.wattage();
+        return cpuBenchmarkService.findByName(cpu.name())
+                .map(b -> b.getTdpWatts() == null ? extractCpuWattage(cpu.name()) : b.getTdpWatts())
+                .orElseGet(() -> extractCpuWattage(cpu.name()));
+    }
+
+    private int resolveGpuTdp(BuildResponse.PartDto gpu) {
+        if (gpu == null) return 200;
+        if (gpu.wattage() != null && gpu.wattage() > 0) return gpu.wattage();
+        return gpuBenchmarkService.findByName(gpu.name())
+                .map(b -> b.getTdpWatts() == null ? extractGpuWattage(gpu.name()) : b.getTdpWatts())
+                .orElseGet(() -> extractGpuWattage(gpu.name()));
+    }
+
+    private Tier tierOfPart(BuildResponse.PartDto part) {
+        if (part == null) return Tier.BUDGET;
+        String label = part.tierLabel();
+        if (label != null && !label.isBlank()) {
+            String low = label.toLowerCase(Locale.ROOT);
+            if (low.contains("flag") || low.contains("enthusiast")) return Tier.FLAGSHIP;
+            if (low.contains("high")) return Tier.HIGH;
+            if (low.contains("mid")) return Tier.MID;
+            return Tier.BUDGET;
+        }
+        // fallback to name-based heuristic
+        return tierOf(part.name());
     }
 
     private int psuMinimumWattage(int estimatedPower) {

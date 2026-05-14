@@ -1,0 +1,110 @@
+/**
+ * Light theme — toggled via html[data-theme="light"].
+ * Dark remains default (:root from design-tokens.css).
+ */
+html[data-theme="light"] {
+  color-scheme: light;
+
+  --strl-bg-app: #f4f8fc;
+  --strl-bg-deep: #eef4f9;
+  --strl-bg-mid: #e2ecf4;
+  --strl-bg-chrome: rgba(255, 255, 255, 0.94);
+
+  --strl-bg-mid-rgb: 226, 236, 244;
+  --strl-bg-deep-rgb: 238, 244, 249;
+  --strl-surface-rgb: 255, 255, 255;
+  --strl-surface-raised-rgb: 245, 249, 252;
+  --strl-surface-dim-rgb: 232, 240, 246;
+  --strl-chrome-rgb: 248, 250, 252;
+  --strl-bar-deep-rgb: 230, 238, 245;
+
+  --strl-accent: #0091a8;
+  --strl-accent-bright: #00b4cc;
+  --strl-accent-dim: #007a8c;
+  --strl-accent-rgb: 0, 145, 168;
+
+  --strl-secondary: #7a00a8;
+  --strl-secondary-soft: #9b4db8;
+  --strl-secondary-rgb: 122, 0, 168;
+  --strl-secondary-glow-rgb: 160, 90, 200;
+
+  --strl-text-primary: #0d1b24;
+  --strl-text-soft: #1a2c38;
+  --strl-text-muted: #5a6b78;
+  --strl-text-sub: #3d5160;
+  --strl-text-nav: #4a5f6d;
+  --strl-text-inverse: #ffffff;
+  --strl-text-on-accent: #ffffff;
+
+  --strl-border-subtle: rgba(13, 27, 36, 0.08);
+  --strl-border-faint: rgba(13, 27, 36, 0.06);
+  --strl-border-ghost: rgba(13, 27, 36, 0.05);
+  --strl-border-strong: rgba(13, 27, 36, 0.12);
+
+  --strl-shadow-card: 0 18px 48px rgba(15, 40, 60, 0.12);
+  --strl-shadow-lift: 0 8px 20px rgba(15, 40, 60, 0.08);
+
+  --strl-gradient-page: linear-gradient(180deg, var(--strl-bg-mid) 0%, var(--strl-bg-deep) 100%);
+  --strl-gradient-workspace: linear-gradient(
+    180deg,
+    rgba(var(--strl-bg-mid-rgb), 0.95) 0%,
+    rgba(var(--strl-bg-deep-rgb), 0.98) 100%
+  );
+  --strl-gradient-accent-wash: linear-gradient(
+    180deg,
+    rgba(var(--strl-accent-rgb), 0.12) 0%,
+    rgba(var(--strl-accent-rgb), 0.04) 100%
+  );
+  --strl-gradient-case-rail: linear-gradient(
+    180deg,
+    rgba(var(--strl-accent-rgb), 0.75),
+    rgba(var(--strl-secondary-glow-rgb), 0.25)
+  );
+
+  --strl-scrollbar-thumb: #b0c4d0;
+
+  --strl-mint: #0d7a4a;
+  --strl-mint-rgb: 13, 122, 74;
+  --strl-ice: #006b82;
+  --strl-surface-hover-rgb: 220, 232, 242;
+  --strl-surface-hover2-rgb: 210, 224, 236;
+
+  --strl-error-bg: rgba(180, 40, 50, 0.12);
+  --strl-error-text: #8b1d28;
+
+  --strl-auth-purple: #5c4ddb;
+  --strl-cta-ink: #ffffff;
+  --strl-alert-error-bg: rgba(200, 50, 70, 0.1);
+  --strl-alert-error-text: #a32035;
+  --strl-alert-success-text: #0a6b5c;
+
+  --cpg-background: #eef4f9;
+  --cpg-on-surface: #152028;
+  --cpg-outline-variant: #c5d2dc;
+  --cpg-primary-container: #0091a8;
+  --cpg-banner-rgb: 248, 251, 253;
+
+  --strl-compat-hint-fg: #5c4200;
+  --strl-compat-hint-bg: rgba(200, 130, 0, 0.12);
+  --strl-compat-hint-border: rgba(180, 110, 0, 0.24);
+}
+
+html[data-theme="light"] body {
+  background-color: var(--strl-bg-deep);
+  background-image:
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(var(--strl-accent-rgb), 0.08), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 40%, rgba(var(--strl-secondary-rgb), 0.06), transparent 50%);
+  background-size: cover, cover;
+  background-repeat: no-repeat;
+  background-position: center, center;
+  background-attachment: fixed;
+  color: var(--strl-text-primary);
+}
+
+html[data-theme="light"] .builder-page {
+  background-image:
+    linear-gradient(180deg, rgba(248, 251, 253, 0.94) 0%, rgba(238, 244, 249, 0.96) 100%),
+    radial-gradient(ellipse 100% 60% at 50% 0%, rgba(var(--strl-accent-rgb), 0.06), transparent 50%),
+    url(../png/aksesori-pc-gaming1.png);
+  background-size: cover, cover, cover;
+}

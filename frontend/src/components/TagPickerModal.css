@@ -1,0 +1,197 @@
+.tag-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 10, 13, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.tag-picker-panel {
+  width: min(100%, 420px);
+  max-height: min(86vh, 520px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--strl-radius-xl);
+  border: 1px solid rgba(60, 73, 76, 0.75);
+  background: linear-gradient(
+    165deg,
+    rgba(var(--strl-surface-rgb), 0.94) 0%,
+    rgba(var(--strl-chrome-rgb), 0.88) 100%
+  );
+  box-shadow: var(--strl-shadow-card), 0 0 0 1px rgba(var(--strl-accent-rgb), 0.08);
+}
+
+.tag-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 0;
+}
+
+.tag-picker-head h2 {
+  margin: 0;
+  font-family: var(--strl-font-display);
+  font-size: 1.125rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cpg-on-surface);
+}
+
+.tag-picker-close {
+  border: 0;
+  background: rgba(var(--strl-surface-rgb), 0.5);
+  color: var(--cpg-on-surface);
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tag-picker-close:hover {
+  background: rgba(var(--strl-accent-rgb), 0.15);
+  color: var(--strl-accent-bright);
+}
+
+.tag-picker-hint {
+  margin: 10px 18px 0;
+  font-size: 0.8125rem;
+  color: var(--strl-text-muted);
+  line-height: 1.45;
+}
+
+.tag-picker-chips {
+  margin-top: 16px;
+  padding: 0 18px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  border: 1px solid rgba(60, 73, 76, 0.65);
+  background: rgba(var(--strl-bg-deep-rgb), 0.45);
+  color: var(--cpg-on-surface);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 8px 12px;
+  border-radius: var(--strl-radius-pill);
+  cursor: pointer;
+  transition:
+    border-color var(--strl-duration) var(--strl-ease),
+    background var(--strl-duration) var(--strl-ease),
+    color var(--strl-duration) var(--strl-ease);
+}
+
+.tag-chip:hover {
+  border-color: rgba(var(--strl-accent-rgb), 0.45);
+}
+
+.tag-chip-active {
+  border-color: rgba(var(--strl-accent-rgb), 0.55);
+  background: linear-gradient(135deg, rgba(var(--strl-accent-rgb), 0.35) 0%, rgba(var(--strl-secondary-rgb), 0.22) 100%);
+  color: var(--strl-text-inverse);
+}
+
+.tag-picker-custom {
+  padding: 0 18px 14px;
+  border-top: 1px solid rgba(60, 73, 76, 0.35);
+}
+
+.tag-picker-custom-label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--strl-text-muted);
+  margin: 12px 0 8px;
+}
+
+.tag-picker-custom-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.tag-picker-custom-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(60, 73, 76, 0.65);
+  border-radius: var(--strl-radius-sm);
+  background: rgba(var(--strl-bg-deep-rgb), 0.55);
+  color: var(--strl-text-inverse);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.tag-picker-custom-row input:focus {
+  outline: none;
+  border-color: rgba(var(--strl-accent-rgb), 0.45);
+}
+
+.tag-picker-add-custom {
+  flex-shrink: 0;
+  border: 1px solid rgba(var(--strl-accent-rgb), 0.45);
+  background: rgba(var(--strl-accent-rgb), 0.15);
+  color: var(--strl-accent-bright);
+  font-weight: 800;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 14px;
+  border-radius: var(--strl-radius-sm);
+  cursor: pointer;
+}
+
+.tag-picker-add-custom:hover {
+  background: rgba(var(--strl-accent-rgb), 0.25);
+}
+
+.tag-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid rgba(60, 73, 76, 0.45);
+}
+
+.tag-picker-ghost {
+  border: 1px solid rgba(60, 73, 76, 0.65);
+  background: transparent;
+  color: var(--cpg-on-surface);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  padding: 10px 16px;
+  border-radius: var(--strl-radius-pill);
+  cursor: pointer;
+}
+
+.tag-picker-primary {
+  border: 0;
+  background: linear-gradient(135deg, var(--strl-accent) 0%, var(--strl-secondary-soft) 100%);
+  color: var(--strl-cta-ink);
+  font-weight: 800;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 10px 20px;
+  border-radius: var(--strl-radius-pill);
+  cursor: pointer;
+}
+
+.tag-picker-primary:hover {
+  filter: brightness(1.06);
+}

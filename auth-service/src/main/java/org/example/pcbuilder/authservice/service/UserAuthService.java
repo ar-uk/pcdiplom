@@ -44,6 +44,18 @@ public class UserAuthService {
         return userAccountRepository.findByEmail(normalizeEmail(email));
     }
 
+    public Optional<UserAccount> findByUsername(String username) {
+        return userAccountRepository.findByUsername(normalizeUsername(username));
+    }
+
+    public Optional<UserAccount> setTwoFactorEnabledByUsername(String username, boolean enabled) {
+        return userAccountRepository.findByUsername(normalizeUsername(username))
+                .map(user -> {
+                    user.setVerified(enabled);
+                    return userAccountRepository.save(user);
+                });
+    }
+
     public Optional<UserAccount> setTwoFactorEnabled(String email, boolean enabled) {
         return userAccountRepository.findByEmail(normalizeEmail(email))
                 .map(user -> {

@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 
 
@@ -83,13 +84,12 @@ public class ComponentCompatibilityController {
             @RequestBody BuildValidationRequest request) {
         
         // Convert request to parts map
-        Map<String, BuildResponse.PartDto> parts = Map.of(
-                "cpu", convertToPartDto(request.cpu),
-                "gpu", convertToPartDto(request.gpu),
-                "motherboard", convertToPartDto(request.motherboard),
-                "memory", convertToPartDto(request.memory),
-                "powerSupply", convertToPartDto(request.psu)
-        );
+        Map<String, BuildResponse.PartDto> parts = new HashMap<>();
+        parts.put("cpu", convertToPartDto(request.cpu));
+        parts.put("gpu", convertToPartDto(request.gpu));
+        parts.put("motherboard", convertToPartDto(request.motherboard));
+        parts.put("memory", convertToPartDto(request.memory));
+        parts.put("powerSupply", convertToPartDto(request.psu));
         
         ComponentCompatibilityService.CompatibilityCheckResult result = 
                 compatibilityService.validateBuild(parts);
@@ -211,15 +211,27 @@ public class ComponentCompatibilityController {
     private BuildResponse.PartDto convertToPartDto(ComponentInfo info) {
         if (info == null) return null;
         return new BuildResponse.PartDto(
-                info.id,
-                "component",
-                info.name,
+                parseLongOrNull(info.id),
                 info.name,
                 info.priceKzt != null ? info.priceKzt : java.math.BigDecimal.ZERO,
-                null, // url
                 info.socket,
                 info.memoryType,
-                info.wattage
+                info.wattage,
+                null,
+            null,
+            null,
+            null
         );
+    }
+
+    private Long parseLongOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 }

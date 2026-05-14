@@ -1,6 +1,6 @@
 .post-details-page {
   min-height: 100vh;
-  background: linear-gradient(180deg, #0e2a35 0%, #07161c 100%);
+  background: var(--strl-gradient-page);
   color: #ffffff;
   font-family: system-ui, Arial, sans-serif;
 }
