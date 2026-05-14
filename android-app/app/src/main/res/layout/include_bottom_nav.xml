@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/bottom_nav_height"
+        android:background="@drawable/bottom_nav_background"
+        android:elevation="8dp"
+        android:saveEnabled="false"
+        app:itemIconTint="@color/bottom_nav_selector"
+        app:itemPaddingTop="8dp"
+        app:itemTextAppearanceActive="@style/TextAppearance.Rig.LabelSmall"
+        app:itemTextAppearanceInactive="@style/TextAppearance.Rig.LabelSmall"
+        app:itemTextColor="@color/bottom_nav_selector"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/bottom_nav" />
+</merge>

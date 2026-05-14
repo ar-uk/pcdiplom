@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { confirmEnableTwoFactor, disableTwoFactor, enableTwoFactor, logout } from "./lib/authApi.js";
-import { clearSession, loadSession, saveSession } from "./lib/session.js";
+import { clearSession, canonicalUserId, displayUsername, loadSession, saveSession, userIdCandidates } from "./lib/session.js";
+import { mergeUniqueTagStrings, tagsStringToList } from "./lib/tagUtils.js";
+import TagPickerModal from "./components/TagPickerModal.jsx";
+import SiteTopbar from "./components/SiteTopbar.jsx";
 import "./styles/pages/profile.css";
 import profiledflt from "./assets/profiledflt.jpg";
 const PLACEHOLDERS = [
@@ -16,6 +19,18 @@ const PLACEHOLDERS = [
 function formatKzt(value) {
   const amount = Number(value ?? 0);
   return `${amount.toLocaleString("en-US")} KZT`;
+}
+
+function formatSessionExpiry(epochMillis) {
+  const n = Number(epochMillis);
+  if (!Number.isFinite(n) || n <= 0) {
+    return "—";
+  }
+  try {
+    return new Date(n).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return "—";
+  }
 }
 
 export default function ProfilePage() {
@@ -36,16 +51,25 @@ export default function ProfilePage() {
   const [postTags, setPostTags] = useState("");
   const [postImageUrl, setPostImageUrl] = useState("");
   const [attachedBuildId, setAttachedBuildId] = useState("");
+  const [postComposerOpen, setPostComposerOpen] = useState(false);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
 
   useEffect(() => {
     setSession(loadSession());
   }, []);
 
   useEffect(() => {
+    if (!postComposerOpen) {
+      setTagPickerOpen(false);
+    }
+  }, [postComposerOpen]);
+
+  useEffect(() => {
     let alive = true;
 
     async function loadUserBuilds() {
-      if (!session?.email) {
+      const ids = userIdCandidates(session);
+      if (ids.length === 0) {
         if (!alive) return;
         setBuilds([]);
         setBuildsError("");
@@ -65,30 +89,41 @@ export default function ProfilePage() {
       setBuildsError("");
 
       try {
-        const response = await fetch(`/api/recommendation/manual-builds?userId=${encodeURIComponent(session.email)}`, {
-          headers: {
-            Authorization: `Bearer ${session.token}`,
-          },
-        });
+        const headers = { Authorization: `Bearer ${session.token}` };
+        const merged = [];
+        for (const userId of ids) {
+          const response = await fetch(`/api/recommendation/manual-builds?userId=${encodeURIComponent(userId)}`, {
+            headers,
+          });
 
-        if (response.status === 401) {
-          if (!alive) return;
-          clearSession();
-          setSession(null);
-          setBuilds([]);
-          setBuildsError("Session expired. Please sign in again.");
-          navigate("/auth");
-          return;
+          if (response.status === 401) {
+            if (!alive) return;
+            clearSession();
+            setSession(null);
+            setBuilds([]);
+            setBuildsError("Session expired. Please sign in again.");
+            navigate("/auth");
+            return;
+          }
+
+          if (!response.ok) {
+            continue;
+          }
+
+          const rows = await response.json();
+          if (Array.isArray(rows)) {
+            merged.push(...rows);
+          }
         }
 
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `Failed to load builds (${response.status})`);
-        }
-
-        const rows = await response.json();
         if (!alive) return;
-        setBuilds(Array.isArray(rows) ? rows : []);
+        const deduped = Array.from(new Map(merged.map((build) => [String(build.id), build])).values());
+        deduped.sort((a, b) => {
+          const ta = a?.updatedAt != null ? new Date(a.updatedAt).getTime() : 0;
+          const tb = b?.updatedAt != null ? new Date(b.updatedAt).getTime() : 0;
+          return tb - ta;
+        });
+        setBuilds(deduped);
       } catch (loadError) {
         if (!alive) return;
         setBuilds([]);
@@ -102,13 +137,14 @@ export default function ProfilePage() {
     return () => {
       alive = false;
     };
-  }, [session?.email, session?.token, navigate]);
+  }, [session?.username, session?.email, session?.token, navigate]);
 
   useEffect(() => {
     let alive = true;
 
     async function loadMyPosts() {
-      if (!session?.email) {
+      const ids = userIdCandidates(session);
+      if (ids.length === 0) {
         if (alive) {
           setMyPosts([]);
           setPostsLoading(false);
@@ -125,8 +161,10 @@ export default function ProfilePage() {
 
         const rows = await response.json();
         if (!alive) return;
-        const normalizedUser = session.email.trim().toLowerCase();
-        setMyPosts((Array.isArray(rows) ? rows : []).filter((post) => (post.authorUserId || "").toLowerCase() === normalizedUser));
+        const authorIds = new Set(userIdCandidates(session));
+        setMyPosts(
+          (Array.isArray(rows) ? rows : []).filter((post) => authorIds.has((post.authorUserId || "").toLowerCase())),
+        );
       } catch {
         if (!alive) return;
         setMyPosts([]);
@@ -139,10 +177,13 @@ export default function ProfilePage() {
     return () => {
       alive = false;
     };
-  }, [session?.email]);
+  }, [session?.username, session?.email]);
 
   const handleCreatePost = async () => {
-    if (!session?.email) {
+    const live = loadSession();
+    const token = live?.token;
+    const posterId = canonicalUserId(live);
+    if (!posterId || !token) {
       navigate("/auth");
       return;
     }
@@ -155,23 +196,39 @@ export default function ProfilePage() {
     }
 
     const selectedBuild = builds.find((build) => String(build.id) === String(attachedBuildId));
+    const selectedParts = selectedBuild?.selectedParts ?? {};
+    const partsSum = Object.values(selectedParts).reduce((acc, part) => {
+      if (!part || typeof part !== "object") return acc;
+      const n = Number(part.price ?? 0);
+      return acc + (Number.isFinite(n) ? n : 0);
+    }, 0);
+    const buildSnapshot =
+      selectedBuild
+        ? {
+            selectedParts,
+            totalPrice:
+              typeof selectedBuild.totalPrice === "number" && !Number.isNaN(selectedBuild.totalPrice)
+                ? selectedBuild.totalPrice
+                : partsSum > 0
+                  ? partsSum
+                  : null,
+          }
+        : null;
 
     try {
       const response = await fetch("/community/posts", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          authorUserId: session.email.trim().toLowerCase(),
+          authorUserId: posterId,
           title,
           body,
           buildId: selectedBuild ? Number(selectedBuild.id) : null,
-          buildSnapshotJson: selectedBuild ? JSON.stringify(selectedBuild.selectedParts ?? {}) : null,
-          tags: postTags
-            .split(",")
-            .map((tag) => tag.trim())
-            .filter(Boolean),
+          buildSnapshotJson: buildSnapshot ? JSON.stringify(buildSnapshot) : null,
+          tags: tagsStringToList(postTags),
           imageUrls: postImageUrl.trim() ? [postImageUrl.trim()] : [],
         }),
       });
@@ -188,6 +245,7 @@ export default function ProfilePage() {
       setPostTags("");
       setPostImageUrl("");
       setAttachedBuildId("");
+      setPostComposerOpen(false);
       setError("");
     } catch (createError) {
       setError(createError.message || "Could not create post.");
@@ -195,13 +253,14 @@ export default function ProfilePage() {
   };
 
   const handleDeletePost = async (postId) => {
-    if (!session?.email) {
+    const uid = canonicalUserId(session);
+    if (!uid) {
       navigate("/auth");
       return;
     }
 
     try {
-      const response = await fetch(`/community/posts/${postId}?userId=${encodeURIComponent(session.email.trim().toLowerCase())}`, {
+      const response = await fetch(`/community/posts/${postId}?userId=${encodeURIComponent(uid)}`, {
         method: "DELETE",
       });
 
@@ -326,27 +385,52 @@ export default function ProfilePage() {
 
   return (
     <div className="profile-page">
-      <header className="site-topbar">
-        <div className="site-brand" onClick={() => navigate("/")}>KazPcCraft</div>
-        <nav className="site-nav">
-          <span onClick={() => navigate("/")}>Home</span>
-          <span onClick={() => navigate("/discover")}>Discover</span>
-          <span onClick={() => navigate("/build")}>Builder</span>
-          <span className="active" onClick={() => navigate("/profile")}>Profile</span>
-        </nav>
-        <div className="site-nav-action" onClick={handleLogout}>{session ? "Logout" : "Profile"}</div>
-      </header>
+      <SiteTopbar
+        session={session}
+        navAction={{
+          label: session ? "Sign out" : "Sign in",
+          onClick: () => (session ? handleLogout() : navigate("/auth")),
+        }}
+      />
 
       <main className="profile-layout">
         <aside className="sidebar">
           <div className="user-card">
-            <img className="avatar-box" src={profiledflt} alt="Profile avatar" />
+            <img className="user-card-avatar" src={profiledflt} alt="Profile avatar" />
 
-            <div className="user-info">
-              <div>{session?.username ?? "Sign in required"}</div>
-              <div>{session?.email ?? "No account loaded"}</div>
-              <div>2FA {session?.verified ? "On" : "Off"}</div>
-              <div>{session?.role ?? "Guest"}</div>
+            <div className="user-info-panel">
+              {session ? (
+                <>
+                  <div className="user-display-name">{displayUsername(session) ? `@${displayUsername(session)}` : "Account"}</div>
+                  <dl className="user-info-dl">
+                    <div className="user-info-row">
+                      <dt>Username</dt>
+                      <dd>{session.username || "—"}</dd>
+                    </div>
+                    <div className="user-info-row">
+                      <dt>Email</dt>
+                      <dd className="user-info-email">{session.email || "—"}</dd>
+                    </div>
+                    <div className="user-info-row">
+                      <dt>Role</dt>
+                      <dd>{session.role || "—"}</dd>
+                    </div>
+                    <div className="user-info-row">
+                      <dt>2FA</dt>
+                      <dd>{session.verified ? "Enabled" : "Off"}</dd>
+                    </div>
+                    <div className="user-info-row">
+                      <dt>Session expires</dt>
+                      <dd>{formatSessionExpiry(session.expiresAtEpochMillis)}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : (
+                <>
+                  <div className="user-display-name">Guest</div>
+                  <p className="user-info-guest-hint">Sign in to save builds and post to the community.</p>
+                </>
+              )}
             </div>
           </div>
 
@@ -447,20 +531,64 @@ export default function ProfilePage() {
           </div>
 
           <div className="community-posts-section">
-            <div className="community-posts-head">My posts</div>
-            <div className="community-post-composer">
-              <input value={postTitle} onChange={(event) => setPostTitle(event.target.value)} placeholder="Post title" />
-              <textarea value={postBody} onChange={(event) => setPostBody(event.target.value)} placeholder="Write something about your build..." />
-              <input value={postTags} onChange={(event) => setPostTags(event.target.value)} placeholder="Tags (comma separated)" />
-              <input value={postImageUrl} onChange={(event) => setPostImageUrl(event.target.value)} placeholder="Image URL (optional)" />
-              <select value={attachedBuildId} onChange={(event) => setAttachedBuildId(event.target.value)}>
-                <option value="">No attached PC build</option>
-                {builds.map((build) => (
-                  <option key={build.id} value={build.id}>{build.title ?? `Build #${build.id}`}</option>
-                ))}
-              </select>
-              <button type="button" className="new-build-btn" onClick={handleCreatePost}>Create post</button>
+            <div className="community-posts-toolbar">
+              <div className="community-posts-head">My posts</div>
+              {postComposerOpen ? (
+                <button type="button" className="profile-composer-toggle ghost" onClick={() => setPostComposerOpen(false)}>
+                  Close editor
+                </button>
+              ) : (
+                <button type="button" className="profile-composer-toggle" onClick={() => setPostComposerOpen(true)}>
+                  New post
+                </button>
+              )}
             </div>
+
+            {postComposerOpen ? (
+              <div className="community-post-composer">
+                <input value={postTitle} onChange={(event) => setPostTitle(event.target.value)} placeholder="Post title" />
+                <textarea value={postBody} onChange={(event) => setPostBody(event.target.value)} placeholder="Write something about your build..." />
+                <div className="composer-tags-row">
+                  <button type="button" className="tags-mini-btn" onClick={() => setTagPickerOpen(true)}>
+                    Tags
+                  </button>
+                  <span className="composer-tags-preview">
+                    {postTags.trim()
+                      ? postTags
+                          .split(/[,;]+/)
+                          .map((t) => t.trim())
+                          .filter(Boolean)
+                          .join(" · ")
+                      : "No tags selected"}
+                  </span>
+                </div>
+                <input
+                  className="composer-tags-text"
+                  type="text"
+                  value={postTags}
+                  onChange={(event) => setPostTags(event.target.value)}
+                  placeholder="Tags (comma or semicolon) — type your own or merge from Tags"
+                />
+                <input value={postImageUrl} onChange={(event) => setPostImageUrl(event.target.value)} placeholder="Image URL (optional)" />
+                <select value={attachedBuildId} onChange={(event) => setAttachedBuildId(event.target.value)}>
+                  <option value="">No attached PC build</option>
+                  {builds.map((build) => (
+                    <option key={build.id} value={build.id}>{build.title ?? `Build #${build.id}`}</option>
+                  ))}
+                </select>
+                <button type="button" className="new-build-btn" onClick={handleCreatePost}>Create post</button>
+              </div>
+            ) : null}
+
+            <TagPickerModal
+              open={tagPickerOpen}
+              onClose={() => setTagPickerOpen(false)}
+              selectedTags={postTags
+                .split(/[,;]+/)
+                .map((t) => t.trim())
+                .filter(Boolean)}
+              onApply={(tags) => setPostTags((prev) => mergeUniqueTagStrings(prev, tags.join(", ")))}
+            />
 
             {postsLoading ? <div className="build-subtitle">Loading your posts...</div> : null}
             {!postsLoading && myPosts.length === 0 ? <div className="build-subtitle">No posts yet.</div> : null}

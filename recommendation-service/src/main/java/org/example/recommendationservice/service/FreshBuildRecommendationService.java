@@ -324,22 +324,10 @@ public class FreshBuildRecommendationService {
             fetchParts("/api/parsed/motherboard", 500, node -> toMotherboardPart(node, fallbackUsageTracker)),
             fetchParts("/api/reference/matched-motherboard", 500, node -> toMotherboardMatchPart(node, fallbackUsageTracker))
         );
-        List<BuildResponse.PartDto> memoryParts = mergePartPools(
-            fetchParts("/api/parsed/memory", 500, node -> toMemoryPart(node, fallbackUsageTracker)),
-            fetchParts("/api/memory", 500, node -> toMemoryDbPart(node, fallbackUsageTracker))
-        );
-        List<BuildResponse.PartDto> storageParts = mergePartPools(
-            fetchParts("/api/parsed/internal-hard-drive", 500, node -> toStoragePart(node, fallbackUsageTracker)),
-            fetchParts("/api/storage", 500, node -> toStorageDbPart(node, fallbackUsageTracker))
-        );
-        List<BuildResponse.PartDto> psuParts = mergePartPools(
-            fetchParts("/api/parsed/power-supply", 500, node -> toPsuPart(node, fallbackUsageTracker)),
-            fetchParts("/api/psu", 500, node -> toPsuDbPart(node, fallbackUsageTracker))
-        );
-        List<BuildResponse.PartDto> pcCaseParts = mergePartPools(
-            fetchParts("/api/parsed/pc-case", 500, node -> toCasePart(node, fallbackUsageTracker)),
-            fetchParts("/api/case", 500, node -> toCaseDbPart(node, fallbackUsageTracker))
-        );
+        List<BuildResponse.PartDto> memoryParts = fetchParts("/api/parsed/memory", 500, node -> toMemoryPart(node, fallbackUsageTracker));
+        List<BuildResponse.PartDto> storageParts = fetchParts("/api/parsed/internal-hard-drive", 500, node -> toStoragePart(node, fallbackUsageTracker));
+        List<BuildResponse.PartDto> psuParts = fetchParts("/api/parsed/power-supply", 500, node -> toPsuPart(node, fallbackUsageTracker));
+        List<BuildResponse.PartDto> pcCaseParts = fetchParts("/api/parsed/pc-case", 500, node -> toCasePart(node, fallbackUsageTracker));
 
         StockFilterResult cpu = applyStockPolicy(cpuParts, warnings, "cpu", requirements.strictStockOnly());
         StockFilterResult gpu = applyStockPolicy(gpuParts, warnings, "gpu", requirements.strictStockOnly());
@@ -1520,12 +1508,12 @@ public class FreshBuildRecommendationService {
                     .body(String.class);
 
             JsonNode root = objectMapper.readTree(response);
-            JsonNode content = root.path("content");
+            JsonNode content = root.isArray() ? root : root.path("content");
             if (!content.isArray()) {
                 List<String> keys = new ArrayList<>();
                 root.fieldNames().forEachRemaining(keys::add);
                 log.warn(
-                        "part-service JSON has no 'content' array: path={} uri={} rootKeys={}",
+                        "part-service JSON has no array payload: path={} uri={} rootKeys={}",
                         path,
                         requestUri,
                         keys);

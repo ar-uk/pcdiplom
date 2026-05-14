@@ -55,7 +55,7 @@ public class AuthController {
         String email = createdUser.get().getEmail();
         String role = createdUser.get().getRole().name();
         boolean verified = createdUser.get().isVerified();
-        String token = jwtTokenService.issueToken(email, role);
+        String token = jwtTokenService.issueToken(username, role);
         long expiresAt = jwtTokenService.extractExpiryEpochMillis(token);
         return ResponseEntity.ok(new AuthResponse(username, email, role, verified, token, expiresAt));
     }
@@ -80,7 +80,7 @@ public class AuthController {
         String email = authenticatedUser.get().getEmail();
         String role = authenticatedUser.get().getRole().name();
         boolean verified = authenticatedUser.get().isVerified();
-        String token = jwtTokenService.issueToken(email, role);
+        String token = jwtTokenService.issueToken(username, role);
         long expiresAt = jwtTokenService.extractExpiryEpochMillis(token);
         return ResponseEntity.ok(new AuthResponse(username, email, role, verified, token, expiresAt));
     }
@@ -130,7 +130,7 @@ public class AuthController {
         String email = verifiedUser.get().getEmail();
         String role = verifiedUser.get().getRole().name();
         boolean verified = verifiedUser.get().isVerified();
-        String token = jwtTokenService.issueToken(email, role);
+        String token = jwtTokenService.issueToken(username, role);
         long expiresAt = jwtTokenService.extractExpiryEpochMillis(token);
         return ResponseEntity.ok(new AuthResponse(username, email, role, verified, token, expiresAt));
     }
@@ -144,8 +144,11 @@ public class AuthController {
             return ResponseEntity.status(401).body(new ErrorResponse(exception.getMessage()));
         }
 
-        String email = jwtTokenService.extractSubject(token);
-        var user = userAuthService.findByEmail(email);
+        String principal = jwtTokenService.extractSubject(token);
+        var user = userAuthService.findByUsername(principal);
+        if (user.isEmpty()) {
+            user = userAuthService.findByEmail(principal);
+        }
         if (user.isEmpty()) {
             return ResponseEntity.status(404).body(new ErrorResponse("User not found"));
         }
@@ -182,8 +185,11 @@ public class AuthController {
             return ResponseEntity.status(401).body(new ErrorResponse(exception.getMessage()));
         }
 
-        String email = jwtTokenService.extractSubject(token);
-        var updatedUser = userAuthService.setTwoFactorEnabled(email, false);
+        String principal = jwtTokenService.extractSubject(token);
+        var updatedUser = userAuthService.setTwoFactorEnabledByUsername(principal, false);
+        if (updatedUser.isEmpty()) {
+            updatedUser = userAuthService.setTwoFactorEnabled(principal, false);
+        }
         if (updatedUser.isEmpty()) {
             return ResponseEntity.status(404).body(new ErrorResponse("User not found"));
         }

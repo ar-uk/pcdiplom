@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { loadSession } from "./lib/session.js";
+import SiteTopbar from "./components/SiteTopbar.jsx";
 import "./styles/pages/ai-builder.css";
 
 function formatPrice(value) {
@@ -165,16 +166,7 @@ export default function AiBuilderPage() {
 
   return (
     <div className="ai-builder-page">
-      <header className="site-topbar">
-        <div className="site-brand" onClick={() => navigate("/")}>KazPcCraft</div>
-        <nav className="site-nav">
-          <span onClick={() => navigate("/")}>Home</span>
-          <span className="active" onClick={() => navigate("/ai-builder")}>AI Builder</span>
-          <span onClick={() => navigate("/build")}>Builder</span>
-          <span onClick={() => navigate("/discover")}>Discover</span>
-        </nav>
-        <div className="site-nav-action" onClick={() => navigate(session ? "/profile" : "/auth")}>{session ? "Profile" : "Sign in"}</div>
-      </header>
+      <SiteTopbar session={session} />
 
       <div className="ai-builder-wrap">
         <div className="ai-builder-head">

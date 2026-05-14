@@ -69,6 +69,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getServletPath();
         return antPathMatcher.match("/auth/**", path)
                 || antPathMatcher.match("/api/parsed/**", path)
+                || antPathMatcher.match("/api/reference/**", path)
+                || (antPathMatcher.match("/community/**", path) && "GET".equals(request.getMethod()))
                 || antPathMatcher.match("/error", path)
                 || antPathMatcher.match("/actuator/**", path);
     }

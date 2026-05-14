@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light theme — used when night mode is forced OFF -->
+    <color name="background">#f2f7fb</color>
+    <color name="on_background">#152028</color>
+    <color name="surface">#ffffff</color>
+    <color name="on_surface">#152028</color>
+    <color name="surface_container">#ffffff</color>
+    <color name="surface_container_low">#eef4f9</color>
+    <color name="surface_container_lowest">#e4edf5</color>
+    <color name="surface_container_high">#f7fafc</color>
+    <color name="surface_container_highest">#dfe8f0</color>
+    <color name="surface_variant">#dfe8f0</color>
+    <color name="on_surface_variant">#4a5f6d</color>
+    <color name="outline">#8aa0b0</color>
+    <color name="outline_variant">#c5d2dc</color>
+    <color name="primary">#005f68</color>
+    <color name="on_primary">#ffffff</color>
+    <color name="primary_container">#0091a8</color>
+    <color name="on_primary_container">#ffffff</color>
+    <color name="primary_fixed">#00b4cc</color>
+    <color name="primary_fixed_dim">#007a8c</color>
+    <color name="on_primary_fixed">#ffffff</color>
+    <color name="secondary">#5a0078</color>
+    <color name="on_secondary">#ffffff</color>
+    <color name="secondary_container">#7a00a8</color>
+    <color name="on_secondary_container">#fff6fc</color>
+    <color name="error">#ba1a1a</color>
+    <color name="on_error">#ffffff</color>
+    <color name="glass_fill">#0F0D1B24</color>
+    <color name="glass_stroke">#220D1B24</color>
+    <color name="gradient_start">#0091a8</color>
+    <color name="gradient_end">#7a00a8</color>
+
+    <color name="toolbar_overlay">#EEF5F9FA</color>
+    <color name="toolbar_bottom_fill">#F5F9FC</color>
+    <color name="toolbar_bottom_stroke">#280D1B24</color>
+
+    <color name="bottom_nav_icon_active">#007a8c</color>
+    <color name="bottom_nav_active_indicator">#330091a8</color>
+    <color name="bottom_nav_ripple">#1A152028</color>
+
+    <color name="toolbar_title">#152028</color>
+
+    <color name="md_primary">@color/primary_container</color>
+    <color name="md_primary_variant">@color/primary_fixed_dim</color>
+    <color name="md_on_primary">@color/on_primary_container</color>
+    <color name="md_secondary">@color/secondary_container</color>
+    <color name="md_background">@color/background</color>
+    <color name="md_surface">@color/surface_container_high</color>
+    <color name="md_error">@color/error</color>
+    <color name="text_primary">@color/on_surface</color>
+    <color name="text_secondary">@color/on_surface_variant</color>
+    <color name="card_bg">@color/surface_container</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

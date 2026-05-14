@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { loadSession } from "./lib/session.js";
+import { canonicalUserId, loadSession } from "./lib/session.js";
+import SiteTopbar from "./components/SiteTopbar.jsx";
 import "./styles/pages/post-details.css";
 
 const PART_ORDER = ["cpu", "motherboard", "gpu", "ram", "storage", "storage_1", "storage_2", "storage_3", "psu", "case", "cooling"];
@@ -50,7 +51,7 @@ export default function PostDetailsPage() {
   const [error, setError] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
 
-  const userId = session?.email?.trim().toLowerCase() || session?.username?.trim().toLowerCase() || null;
+  const userId = canonicalUserId(session);
   const authHeaders = session?.token ? { Authorization: `Bearer ${session.token}` } : undefined;
 
   useEffect(() => {
@@ -220,16 +221,7 @@ export default function PostDetailsPage() {
 
   return (
     <div className="post-details-page">
-      <header className="site-topbar">
-        <div className="site-brand" onClick={() => navigate("/")}>KazPcCraft</div>
-        <nav className="site-nav">
-          <span onClick={() => navigate("/")}>Home</span>
-          <span className="active" onClick={() => navigate("/discover")}>Discover</span>
-          <span onClick={() => navigate("/build")}>Builder</span>
-          <span onClick={() => navigate("/profile")}>Profile</span>
-        </nav>
-        <div className="site-nav-action" onClick={() => navigate(session ? "/profile" : "/auth")}>{session ? "Profile" : "Sign in"}</div>
-      </header>
+      <SiteTopbar session={session} />
 
       <main className="post-details-layout">
         {loading ? <div className="panel">Loading post...</div> : null}

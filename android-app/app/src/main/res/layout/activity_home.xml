@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    tools:context=".HomeActivity">
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingStart="@dimen/container_padding"
+        android:paddingEnd="@dimen/container_padding"
+        android:paddingTop="8dp"
+        android:paddingBottom="@dimen/padding_bottom_chrome_nav">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/stack_md">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/stack_sm"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_memory_24"
+                    app:tint="@color/primary_fixed_dim" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/home_active_project"
+                    android:textAppearance="@style/TextAppearance.Rig.SectionLabel" />
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Rig.Card.Glass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/stack_sm"
+                app:strokeColor="@color/primary_fixed_dim"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/gutter">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/home_in_progress"
+                        android:textAppearance="@style/TextAppearance.Rig.LabelSmall"
+                        android:textColor="@color/primary_fixed_dim" />
+
+                    <TextView
+                        android:id="@+id/home_placeholder"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/home_welcome_title"
+                        android:textAppearance="@style/TextAppearance.Rig.Display"
+                        android:textColor="@color/on_surface"
+                        android:textSize="22sp" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/stack_sm"
+                        android:text="@string/home_welcome_body"
+                        android:textAppearance="@style/TextAppearance.Rig.Body" />
+
+                    <ProgressBar
+                        android:id="@+id/home_progress"
+                        style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="6dp"
+                        android:layout_marginTop="@dimen/gutter"
+                        android:indeterminate="false"
+                        android:max="100"
+                        android:progress="35"
+                        android:progressDrawable="@drawable/progress_horizontal_rig" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/stack_md"
+                android:baselineAligned="false"
+                android:orientation="vertical">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_manual_build"
+                    style="@style/Widget.Rig.Card.Glass"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:rippleColor="@color/primary_fixed_dim">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/gutter">
+
+                        <FrameLayout
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:background="@drawable/glass_card_background">
+
+                            <ImageView
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:layout_gravity="center"
+                                android:contentDescription="@null"
+                                android:src="@drawable/ic_nav_build"
+                                app:tint="@color/primary_fixed" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/stack_sm"
+                            android:text="@string/home_manual_build"
+                            android:textAppearance="@style/TextAppearance.Rig.Headline"
+                            android:textSize="18sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/home_manual_build_desc"
+                            android:textAppearance="@style/TextAppearance.Rig.Body" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_ai_build"
+                    style="@style/Widget.Rig.Card.Glass"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/gutter"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:rippleColor="@color/secondary_container">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/gutter">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="end"
+                            android:background="@color/secondary_container"
+                            android:paddingHorizontal="8dp"
+                            android:paddingVertical="4dp"
+                            android:text="@string/home_badge_new"
+                            android:textAppearance="@style/TextAppearance.Rig.LabelSmall"
+                            android:textColor="@color/on_secondary_container" />
+
+                        <FrameLayout
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="4dp"
+                            android:background="@drawable/glass_card_background">
+
+                            <ImageView
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:layout_gravity="center"
+                                android:contentDescription="@null"
+                                android:src="@drawable/ic_nav_psychology"
+                                app:tint="@color/secondary" />
+                        </FrameLayout>
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/stack_sm"
+                            android:text="@string/home_ai_build"
+                            android:textAppearance="@style/TextAppearance.Rig.Headline"
+                            android:textSize="18sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/home_ai_build_desc"
+                            android:textAppearance="@style/TextAppearance.Rig.Body" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/stack_md"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/home_community_rigs"
+                    android:textAppearance="@style/TextAppearance.Rig.SectionLabel" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/view_all_community"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/home_view_all"
+                    android:textColor="@color/primary_fixed"
+                    app:rippleColor="@color/primary_fixed_dim" />
+            </LinearLayout>
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/Widget.Rig.Card.Glass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/stack_sm">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:padding="@dimen/gutter">
+
+                    <View
+                        android:layout_width="72dp"
+                        android:layout_height="72dp"
+                        android:background="@color/surface_container_high" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="@dimen/gutter"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/home_intel_breaking"
+                            android:textAppearance="@style/TextAppearance.Rig.LabelSmall"
+                            android:textColor="@color/secondary" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/home_intel_headline"
+                            android:textAppearance="@style/TextAppearance.Rig.Headline"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="@string/home_intel_meta"
+                            android:textAppearance="@style/TextAppearance.Rig.LabelSmall" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <include
+        layout="@layout/include_shell_bottom_nav"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

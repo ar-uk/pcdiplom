@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="container_padding">20dp</dimen>
+    <dimen name="gutter">16dp</dimen>
+    <dimen name="stack_sm">12dp</dimen>
+    <dimen name="stack_md">24dp</dimen>
+    <dimen name="stack_lg">40dp</dimen>
+    <dimen name="radius_sm">4dp</dimen>
+    <dimen name="radius_md">8dp</dimen>
+    <dimen name="radius_lg">12dp</dimen>
+    <dimen name="bottom_nav_height">80dp</dimen>
+    <!-- Bottom toolbar (~56dp) + bottom nav + gap -->
+    <dimen name="padding_bottom_chrome_nav">144dp</dimen>
+    <dimen name="padding_bottom_chrome_toolbar">64dp</dimen>
+</resources>

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { loadSession } from "./lib/session.js";
+import { canonicalUserId, loadSession } from "./lib/session.js";
+import SiteTopbar from "./components/SiteTopbar.jsx";
 import "./styles/pages/builder.css";
 
 const CATEGORIES = [
@@ -34,6 +35,9 @@ const SLOT_ORDER = [
   { key: "case", label: "Case" },
   { key: "cooling", label: "Cooling" },
 ];
+
+/** How many part rows to show per catalog page after search + compatibility filtering. */
+const CATALOG_PAGE_SIZE = 24;
 
 function formatMoney(value) {
   if (value == null || Number.isNaN(Number(value))) {
@@ -246,6 +250,10 @@ function formatSocketLabel(socket) {
   return socket.replace(/\s+/g, "").toUpperCase();
 }
 
+/**
+ * Human-readable compatibility hints for the catalogue.
+ * `categories` lists which builder tabs this tag applies to (omit = all tabs).
+ */
 function buildFilterTags(selectedParts) {
   const tags = [];
   const cpuSocket = formatSocketLabel(selectedParts.cpu?.socket);
@@ -257,31 +265,51 @@ function buildFilterTags(selectedParts) {
   const gpuTdp = selectedParts.gpu?.wattage ?? selectedParts.gpu?.powerHint ?? null;
 
   if (cpuSocket) {
-    tags.push(`Showing ${cpuSocket} Board`);
+    tags.push({
+      id: "filter-board-socket",
+      label: `Motherboards: ${cpuSocket} socket`,
+      categories: ["motherboard"],
+    });
   }
 
   if (motherboardSocket) {
-    tags.push(`Showing ${motherboardSocket} CPUs`);
+    tags.push({
+      id: "filter-cpu-socket",
+      label: `CPUs & coolers: ${motherboardSocket} socket`,
+      categories: ["cpu", "cooling"],
+    });
   }
 
   if (ramType) {
-    tags.push(`Showing ${ramType} RAM`);
+    tags.push({
+      id: "filter-ram-type",
+      label: `RAM / boards: ${ramType}`,
+      categories: ["ram", "motherboard"],
+    });
   }
 
   if (boardFormFactor) {
-    tags.push(`Case filter: ${boardFormFactor} fit`);
+    tags.push({
+      id: "filter-case-ff",
+      label: `Cases that fit ${boardFormFactor} boards`,
+      categories: ["case"],
+    });
   }
 
-  if (cpuTdp || gpuTdp) {
-    tags.push(`Power filter: PSU at least ${powerBudget}W`);
+  if (cpuTdp != null || gpuTdp != null) {
+    tags.push({
+      id: "filter-psu-power",
+      label: `PSU ≥ ${powerBudget}W (CPU ${cpuTdp ?? "—"}W + GPU ${gpuTdp ?? "—"}W + headroom)`,
+      categories: ["psu"],
+    });
   }
 
-  if (cpuTdp) {
-    tags.push(`CPU TDP ${cpuTdp}W`);
-  }
-
-  if (gpuTdp) {
-    tags.push(`GPU TDP ${gpuTdp}W`);
+  if (selectedParts.case?.formFactor === "ITX") {
+    tags.push({
+      id: "filter-itx-gpu",
+      label: "ITX case: very large / high-TDP GPUs may be hidden",
+      categories: ["gpu"],
+    });
   }
 
   return tags;
@@ -290,7 +318,7 @@ function buildFilterTags(selectedParts) {
 export default function BuilderPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [session] = useState(() => loadSession());
+  const [session, setSession] = useState(() => loadSession());
   const [partsByCategory, setPartsByCategory] = useState({
     cpu: [],
     gpu: [],
@@ -306,13 +334,16 @@ export default function BuilderPage() {
   const [activeStorageSlot, setActiveStorageSlot] = useState("storage_1");
   const [searchText, setSearchText] = useState("");
   const [priceOrder, setPriceOrder] = useState("asc");
+  const [catalogPage, setCatalogPage] = useState(0);
   const [buildTitle, setBuildTitle] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  const userId = session?.email?.trim().toLowerCase() ?? null;
   const editingBuildId = Number.isFinite(Number(location.state?.editBuild?.id)) ? Number(location.state.editBuild.id) : null;
 
+  useEffect(() => {
+    setSession(loadSession());
+  }, [location.pathname, location.key]);
   useEffect(() => {
     let alive = true;
 
@@ -381,7 +412,28 @@ export default function BuilderPage() {
 
   const activeList = useMemo(() => partsByCategory[activeCategory] || [], [partsByCategory, activeCategory]);
 
-  const visibleParts = useMemo(() => {
+  const catalogStats = useMemo(() => {
+    let hiddenCompat = 0;
+
+    for (const part of activeList) {
+      if (Number(part.price) <= 0) {
+        continue;
+      }
+
+      const isPicked =
+        activeCategory === "storage"
+          ? STORAGE_SLOTS.some((key) => selectedParts[key]?.id === part.id)
+          : selectedParts[activeCategory]?.id === part.id;
+
+      if (!isPicked && !isPartCompatible(part, selectedParts)) {
+        hiddenCompat += 1;
+      }
+    }
+
+    return { hiddenCompat, loaded: activeList.length };
+  }, [activeList, selectedParts, activeCategory]);
+
+  const filteredSortedParts = useMemo(() => {
     const query = searchText.toLowerCase().trim();
 
     const sortedList = [...activeList].sort((left, right) => {
@@ -417,6 +469,19 @@ export default function BuilderPage() {
     });
   }, [activeList, searchText, selectedParts, activeCategory, priceOrder]);
 
+  const pageCount = Math.max(1, Math.ceil(filteredSortedParts.length / CATALOG_PAGE_SIZE));
+  const safeCatalogPage = Math.min(catalogPage, pageCount - 1);
+  const pagedParts = useMemo(() => {
+    const start = safeCatalogPage * CATALOG_PAGE_SIZE;
+    return filteredSortedParts.slice(start, start + CATALOG_PAGE_SIZE);
+  }, [filteredSortedParts, safeCatalogPage]);
+
+  useLayoutEffect(() => {
+    if (catalogPage !== safeCatalogPage) {
+      setCatalogPage(safeCatalogPage);
+    }
+  }, [catalogPage, safeCatalogPage]);
+
   const completion = useMemo(() => {
     const hasStorage = STORAGE_SLOTS.some((key) => selectedParts[key]) || Boolean(selectedParts.storage);
     const hasRam = Boolean(selectedParts.ram);
@@ -447,7 +512,14 @@ export default function BuilderPage() {
     [selectedParts]
   );
 
-  const filterTags = useMemo(() => buildFilterTags(selectedParts), [selectedParts]);
+  const filterTagsAll = useMemo(() => buildFilterTags(selectedParts), [selectedParts]);
+  const filterTags = useMemo(
+    () =>
+      filterTagsAll.filter(
+        (tag) => !tag.categories?.length || tag.categories.includes(activeCategory)
+      ),
+    [filterTagsAll, activeCategory]
+  );
   const compatibilityIssues = [];
 
   const savePartPayload = (part) => ({
@@ -490,7 +562,10 @@ export default function BuilderPage() {
       return;
     }
 
-    if (!session?.token || !userId) {
+    const live = loadSession();
+    const token = live?.token;
+    const uid = canonicalUserId(live);
+    if (!token || !uid) {
       alert("Please sign in first to save your build.");
       navigate("/auth");
       return;
@@ -501,9 +576,9 @@ export default function BuilderPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.token}`,
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId, title: normalizedTitle }),
+        body: JSON.stringify({ userId: uid, title: normalizedTitle }),
       });
 
       if (createDraftResponse.status === 401) {
@@ -528,10 +603,10 @@ export default function BuilderPage() {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session.token}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            userId,
+            userId: uid,
             category,
             part: savePartPayload(part),
             estimatedPower,
@@ -555,10 +630,10 @@ export default function BuilderPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          userId,
+          userId: uid,
           targetBuildId: editingBuildId,
           title: normalizedTitle,
           description: "Saved from builder page",
@@ -586,19 +661,7 @@ export default function BuilderPage() {
 
   return (
     <div className="builder-page">
-      <header className="topbar">
-        <div className="logo" onClick={() => navigate("/")}>KZPCCRAFT</div>
-
-        <nav className="topnav">
-          <span onClick={() => navigate("/")}>Home</span>
-          <span onClick={() => navigate("/discover")}>Discover</span>
-          <span className="nav-active">Builder</span>
-        </nav>
-
-        <div className="profile-link" onClick={() => navigate(session ? "/profile" : "/auth")}>
-          {session ? "Profile" : "Sign in"}
-        </div>
-      </header>
+      <SiteTopbar session={session} />
 
       <main className="builder-layout">
         <aside className="catalog-panel">
@@ -622,6 +685,7 @@ export default function BuilderPage() {
                   onClick={() => {
                     setActiveCategory(cat.key);
                     setSearchText("");
+                    setCatalogPage(0);
                   }}
                 >
                   <span>{cat.label}</span>
@@ -632,10 +696,10 @@ export default function BuilderPage() {
           </div>
 
           {filterTags.length > 0 ? (
-            <div className="catalog-tags" aria-label="Current compatibility filters">
+            <div className="catalog-tags" aria-label="Current compatibility filters for this category">
               {filterTags.map((tag) => (
-                <span key={tag} className="catalog-tag">
-                  {tag}
+                <span key={tag.id} className="catalog-tag" title="Filters applied to the part list on the right">
+                  {tag.label}
                 </span>
               ))}
             </div>
@@ -667,7 +731,12 @@ export default function BuilderPage() {
               <div className="parts-head">
                 <h3>{CATEGORIES.find((c) => c.key === activeCategory)?.label}</h3>
                 <div className="parts-head-right">
-                  <span>{visibleParts.length} options</span>
+                  <span>
+                    {filteredSortedParts.length} match{filteredSortedParts.length === 1 ? "" : "es"}
+                    {catalogStats.loaded > 0 && filteredSortedParts.length !== catalogStats.loaded
+                      ? ` of ${catalogStats.loaded} loaded`
+                      : ""}
+                  </span>
                   <div className="parts-head-leds">
                     <span className="case-led" />
                     <span className="case-led" />
@@ -699,14 +768,20 @@ export default function BuilderPage() {
                   className="search-input"
                   type="text"
                   value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
+                  onChange={(e) => {
+                    setSearchText(e.target.value);
+                    setCatalogPage(0);
+                  }}
                   placeholder="Search parts by name or shop..."
                 />
 
                 <button
                   type="button"
                   className={`price-toggle-btn ${priceOrder === "desc" ? "descending" : "ascending"}`}
-                  onClick={() => setPriceOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                  onClick={() => {
+                    setPriceOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                    setCatalogPage(0);
+                  }}
                   title="Toggle price order"
                 >
                   <span className="price-toggle-label">Price</span>
@@ -714,12 +789,19 @@ export default function BuilderPage() {
                 </button>
               </div>
 
+              {!loading && !loadError && catalogStats.hiddenCompat > 0 ? (
+                <div className="catalog-compat-hint" role="status">
+                  {catalogStats.hiddenCompat} part{catalogStats.hiddenCompat === 1 ? "" : "s"} hidden (incompatible with
+                  your current picks; selected parts stay visible).
+                </div>
+              ) : null}
+
               <div className="parts-list" key={activeCategory}>
                 {loading && <div className="parts-state">Loading parts...</div>}
                 {!loading && loadError && <div className="parts-state error">{loadError}</div>}
                 {!loading &&
                   !loadError &&
-                  visibleParts.map((part) => {
+                  pagedParts.map((part) => {
                     const isPicked =
                       activeCategory === "storage"
                         ? STORAGE_SLOTS.some((key) => selectedParts[key]?.id === part.id)
@@ -746,10 +828,37 @@ export default function BuilderPage() {
                     );
                   })}
 
-                {!loading && !loadError && visibleParts.length === 0 && (
+                {!loading && !loadError && filteredSortedParts.length === 0 && (
                   <div className="parts-state">No parts match your search.</div>
                 )}
               </div>
+
+              {!loading && !loadError && filteredSortedParts.length > CATALOG_PAGE_SIZE ? (
+                <div className="catalog-pagination" role="navigation" aria-label="Catalog pages">
+                  <button
+                    type="button"
+                    className="catalog-page-btn"
+                    disabled={safeCatalogPage <= 0}
+                    onClick={() => setCatalogPage((p) => Math.max(0, p - 1))}
+                  >
+                    Previous
+                  </button>
+                  <span className="catalog-page-meta">
+                    Page {safeCatalogPage + 1} of {pageCount} ·{" "}
+                    {safeCatalogPage * CATALOG_PAGE_SIZE + 1}–
+                    {Math.min((safeCatalogPage + 1) * CATALOG_PAGE_SIZE, filteredSortedParts.length)} of{" "}
+                    {filteredSortedParts.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="catalog-page-btn"
+                    disabled={safeCatalogPage >= pageCount - 1}
+                    onClick={() => setCatalogPage((p) => Math.min(pageCount - 1, p + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
+              ) : null}
             </div>
 
             <div className="preview-side">
@@ -796,19 +905,6 @@ export default function BuilderPage() {
           <div className="preview-card hint-card">
             <div className="build-info-box">
               <div className="preview-title">Build info</div>
-
-              <div className="build-info-grid">
-                <div>CPU: {selectedParts.cpu?.name || "Not selected"}</div>
-                <div>GPU: {selectedParts.gpu?.name || "Not selected"}</div>
-                <div>Motherboard: {selectedParts.motherboard?.name || "Not selected"}</div>
-                <div>RAM: {selectedParts.ram?.name || "Not selected"}</div>
-                <div>Storage 1: {selectedParts.storage_1?.name || "Not selected"}</div>
-                <div>Storage 2: {selectedParts.storage_2?.name || "Not selected"}</div>
-                <div>Storage 3: {selectedParts.storage_3?.name || "Not selected"}</div>
-                <div>PSU: {selectedParts.psu?.name || "Not selected"}</div>
-                <div>Case: {selectedParts.case?.name || "Not selected"}</div>
-                <div>Cooling: {selectedParts.cooling?.name || "Not selected"}</div>
-              </div>
 
               <div className="build-info-row">
                 <div className="build-power">Estimated power: {estimatedPower}W</div>

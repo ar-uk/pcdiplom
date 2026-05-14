@@ -1,11 +1,14 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
-import './styles/global.css'
-import App from './App.jsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import { initThemeFromStorage } from "./lib/theme.js";
+import "./styles/global.css";
+import "./styles/site-banner.css";
+import App from "./App.jsx";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
+initThemeFromStorage();
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 if (API_BASE_URL) {
   const originalFetch = window.fetch.bind(window)
   window.fetch = (input, init) => {
