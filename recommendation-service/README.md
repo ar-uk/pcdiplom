@@ -3,34 +3,40 @@
 Spring Boot microservice for turning a user prompt into a PC build recommendation.
 
 ## What it does
+
 - Accepts a prompt such as "Build me a 1440p gaming PC under 1500"
-- Uses OpenAI to extract structured intent
-- Returns a starter build response that can later be replaced with real catalog lookups from `partService`
-- Supports a follow-up chat endpoint for future build edits
+- Calls a local **Ollama** HTTP endpoint (default **DeepSeek R1**) to extract structured intent; compatibility stays in Java
+- Returns a build response grounded in catalog and compatibility logic
+
+## LLM settings (not in the database)
+
+Configure only via `src/main/resources/application.properties` or environment variables (`LLM_ENABLED`, `LLM_MODEL`, `LLM_URL`). Nothing is stored in Postgres for LLM host or model name.
+
+Example `.env` next to Compose (optional):
+
+```bash
+LLM_ENABLED=true
+LLM_MODEL=deepseek-r1:14b
+LLM_URL=http://127.0.0.1:11434/v1/chat/completions
+```
+
+If `recommendation-service` runs **inside Docker** and Ollama runs on the **host**, use `LLM_URL=http://host.docker.internal:11434/v1/chat/completions` (see root `docker-compose.yml`).
 
 ## Endpoints
+
 - `POST /api/recommendation/build`
 - `POST /api/recommendation/chat/{sessionId}`
 
-## Environment variables
-Set your OpenAI key before starting the service:
-
-```bash
-OPENAI_API_KEY=your_key_here
-```
-
 ## Run
+
 From the service root:
 
 ```bash
 ./gradlew bootRun
 ```
 
-If you are on Windows:
+Windows:
 
 ```powershell
-gradlew.bat bootRun
+.\gradlew.bat bootRun
 ```
-
-## Notes
-This project currently returns a scaffolded build response. The next step is connecting it to `partService` so the selected parts come from your actual database instead of sample data.
