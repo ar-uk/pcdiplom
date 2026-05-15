@@ -3,7 +3,6 @@ package org.example.recommendationservice.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.example.recommendationservice.config.OpenAiProperties;
 import org.example.recommendationservice.dto.BuildRequest;
 import org.example.recommendationservice.dto.BuildResponse;
 import org.example.recommendationservice.dto.ChatRequest;
@@ -18,6 +17,7 @@ import org.example.recommendationservice.model.PartPerformanceMapping;
 import org.example.recommendationservice.repository.AiSavedBuildRepository;
 import org.example.recommendationservice.repository.PartPerformanceMappingRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -28,6 +28,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -50,7 +51,6 @@ public class FreshBuildRecommendationService {
             "balanced", new VariantProfile("balanced", new BigDecimal("0.40"), new BigDecimal("0.23"), 0.35, 0.40, 0.25)
     );
 
-    private final OpenAiProperties openAiProperties;
     private final ObjectMapper objectMapper;
     private final AiSavedBuildRepository aiSavedBuildRepository;
     private final HardwareFallbackResolver hardwareFallbackResolver;
@@ -63,8 +63,16 @@ public class FreshBuildRecommendationService {
 
     private static final Logger log = LoggerFactory.getLogger(FreshBuildRecommendationService.class);
 
-    @Value("${openai.enabled:false}")
-    private boolean openAiEnabled;
+    @Value("${llm.enabled:false}")
+    private boolean llmEnabled;
+
+    /** From application.properties or env (LLM_MODEL). Never persisted to the database. */
+    @Value("${llm.model:deepseek-r1:14b}")
+    private String llmModel;
+
+    /** From application.properties or env (LLM_URL). Never persisted to the database. */
+    @Value("${llm.url:http://127.0.0.1:11434/v1/chat/completions}")
+    private String llmUrl;
 
     private final RestClient restClient = RestClient.builder().build();
 
@@ -182,6 +190,7 @@ public class FreshBuildRecommendationService {
 
         try {
             ComponentPools pools = loadComponentPools(prompt, requirements, warnings, fallbackUsageTracker);
+            AtomicBoolean sodimmCatalogFallbackNoted = new AtomicBoolean(false);
             log.info(
                     "Session {}: component pools cpus={} gpus={} motherboards={} memories={} storages={} psus={} cases={} fieldInferenceFallbacks={}",
                     sessionId,
@@ -198,7 +207,7 @@ public class FreshBuildRecommendationService {
 
             for (String label : List.of("best_value", "best_performance", "balanced")) {
                 VariantProfile profile = VARIANTS.get(label);
-                VariantCandidate candidate = buildVariant(profile, pools, requirements, budget, strictBudget, intentProfile);
+                VariantCandidate candidate = buildVariant(sessionId, profile, pools, requirements, budget, strictBudget, intentProfile, warnings, sodimmCatalogFallbackNoted);
                 if (candidate != null) {
                     builtVariants.add(candidate);
                     candidateBuildsEvaluated += candidate.evaluatedCount;
@@ -210,7 +219,7 @@ public class FreshBuildRecommendationService {
                 warnings.add("Strict budget eliminated all technically compatible combinations; returning nearest compatible options above budget.");
                 for (String label : List.of("best_value", "best_performance", "balanced")) {
                     VariantProfile profile = VARIANTS.get(label);
-                    VariantCandidate candidate = buildVariant(profile, pools, requirements, budget, false, intentProfile);
+                    VariantCandidate candidate = buildVariant(sessionId, profile, pools, requirements, budget, false, intentProfile, warnings, sodimmCatalogFallbackNoted);
                     if (candidate != null) {
                         builtVariants.add(candidate);
                         candidateBuildsEvaluated += candidate.evaluatedCount;
@@ -372,19 +381,49 @@ public class FreshBuildRecommendationService {
         );
     }
 
+    private List<BuildResponse.PartDto> memoryCandidatesForMotherboard(
+            ComponentPools pools,
+            BuildResponse.PartDto motherboard,
+            BuildResponse.RequirementsDto requirements,
+            BigDecimal budget,
+            VariantProfile profile,
+            IntentScoringProfile intentProfile,
+            boolean excludeSodimm,
+            int limit
+    ) {
+        String expectedMemoryType = normalizeDdrLabel(motherboard.memoryType());
+        return pools.memories.stream()
+                .filter(memory -> memory != null && memory.memoryType() != null && !memory.memoryType().isBlank())
+                .filter(memory -> !excludeSodimm || !isSodimm(memory))
+                .filter(memory -> {
+                    if (expectedMemoryType == null || expectedMemoryType.isBlank()) {
+                        return true;
+                    }
+                    String actualMemoryType = normalizeDdrLabel(memory.memoryType());
+                    return actualMemoryType != null && expectedMemoryType.equalsIgnoreCase(actualMemoryType);
+                })
+                .sorted(Comparator.comparing((BuildResponse.PartDto part) -> partScore(part, "memory", requirements, targetBudgetForComponent(budget, "memory", intentProfile), profile, intentProfile)).reversed())
+                .limit(limit)
+                .toList();
+    }
+
     private VariantCandidate buildVariant(
+            String sessionId,
             VariantProfile profile,
             ComponentPools pools,
             BuildResponse.RequirementsDto requirements,
             BigDecimal budget,
             boolean strictBudget,
-            IntentScoringProfile intentProfile
+            IntentScoringProfile intentProfile,
+            List<String> warnings,
+            AtomicBoolean sodimmCatalogFallbackNoted
     ) {
         List<BuildResponse.PartDto> rankedCpu = rankParts(pools.cpus, "cpu", requirements, targetBudgetForComponent(budget, "cpu", intentProfile), profile, intentProfile);
         List<BuildResponse.PartDto> rankedGpu = rankParts(pools.gpus, "gpu", requirements, targetBudgetForComponent(budget, "gpu", intentProfile), profile, intentProfile);
 
         int evaluated = 0;
         VariantCandidate best = null;
+        VariantSearchTally tally = new VariantSearchTally();
 
         for (BuildResponse.PartDto cpu : rankedCpu.stream().limit(8).toList()) {
             String cpuSocket = cpu.socket();
@@ -397,38 +436,49 @@ public class FreshBuildRecommendationService {
                     .toList();
 
             if (motherboardCandidates.isEmpty()) {
+                tally.emptyMotherboardForCpu++;
                 continue;
             }
 
             for (BuildResponse.PartDto gpu : rankedGpu.stream().limit(10).toList()) {
                 Tier gpuTier = tierOf(gpu);
-                boolean pairingAllowed = cpuGpuPairingAllowed(cpuTier, gpuTier, requirements.useCase(), resolutionLabel(requirements.resolutionTarget()));
+                boolean pairingAllowed = cpuGpuPairingAllowed(
+                        cpuTier,
+                        gpuTier,
+                        requirements.useCase(),
+                        resolutionLabel(requirements.resolutionTarget()),
+                        requirements.workloadType());
                 if (!pairingAllowed) {
                     boolean performancePriority = requirements != null
                             && requirements.priorities() != null
                             && requirements.priorities().stream()
                             .anyMatch(priority -> priority != null && priority.toLowerCase(Locale.ROOT).contains("performance"));
                     if (!performancePriority) {
+                        tally.cpuGpuPairingRejected++;
                         continue;
                     }
                 }
 
                 for (BuildResponse.PartDto motherboard : motherboardCandidates.stream().limit(3).toList()) {
-                    String expectedMemoryType = normalizeDdrLabel(motherboard.memoryType());
-                    List<BuildResponse.PartDto> memoryCandidates = pools.memories.stream()
-                            .filter(memory -> memory != null && memory.memoryType() != null && !memory.memoryType().isBlank())
-                            .filter(memory -> {
-                                if (expectedMemoryType == null || expectedMemoryType.isBlank()) {
-                                    return true;
-                                }
-                                String actualMemoryType = normalizeDdrLabel(memory.memoryType());
-                                return actualMemoryType != null && expectedMemoryType.equalsIgnoreCase(actualMemoryType);
-                            })
-                            .sorted(Comparator.comparing((BuildResponse.PartDto part) -> partScore(part, "memory", requirements, targetBudgetForComponent(budget, "memory", intentProfile), profile, intentProfile)).reversed())
-                            .limit(3)
-                            .toList();
+                    List<BuildResponse.PartDto> memoryCandidates = memoryCandidatesForMotherboard(
+                            pools, motherboard, requirements, budget, profile, intentProfile, true, 6);
+                    boolean relaxSodimmGate = false;
+                    if (memoryCandidates.isEmpty()) {
+                        memoryCandidates = memoryCandidatesForMotherboard(
+                                pools, motherboard, requirements, budget, profile, intentProfile, false, 6);
+                        if (!memoryCandidates.isEmpty()) {
+                            relaxSodimmGate = true;
+                            if (sodimmCatalogFallbackNoted.compareAndSet(false, true)) {
+                                warnings.add(
+                                        "No non-SO-DIMM RAM in the parsed catalog matched some motherboards; using DDR-matched listings as-is. "
+                                                + "Verify desktop DIMM vs laptop SO-DIMM before purchase."
+                                );
+                            }
+                        }
+                    }
 
                     if (memoryCandidates.isEmpty()) {
+                        tally.emptyMemoryForBoard++;
                         continue;
                     }
 
@@ -442,6 +492,12 @@ public class FreshBuildRecommendationService {
                             .toList();
 
                     if (storageCandidates.isEmpty() || pcCaseCandidates.isEmpty()) {
+                        if (storageCandidates.isEmpty()) {
+                            tally.emptyStorage++;
+                        }
+                        if (pcCaseCandidates.isEmpty()) {
+                            tally.emptyCase++;
+                        }
                         continue;
                     }
 
@@ -454,6 +510,7 @@ public class FreshBuildRecommendationService {
                             .toList();
 
                     if (psuCandidates.isEmpty()) {
+                        tally.emptyPsuForPower++;
                         continue;
                     }
 
@@ -472,11 +529,13 @@ public class FreshBuildRecommendationService {
 
                                     BigDecimal total = totalPrice(parts);
                                     if (strictBudget && total.compareTo(budget) > 0) {
+                                        tally.skippedStrictBudget++;
                                         continue;
                                     }
 
-                                    BuildResponse.ChecksDto checks = evaluateChecks(parts, budget, requirements, strictBudget);
+                                    BuildResponse.ChecksDto checks = evaluateChecks(parts, budget, requirements, strictBudget, relaxSodimmGate);
                                     if (!Boolean.TRUE.equals(checks.compatibilityPassed())) {
+                                        tallyCompatibilityFailures(checks, requirements, parts, tally);
                                         continue;
                                     }
 
@@ -499,18 +558,80 @@ public class FreshBuildRecommendationService {
         }
 
         if (best == null) {
+            log.warn(
+                    "Session {} variant '{}': no scored candidate. strictBudget={} evaluated={} tally=[strictOverBudget={}, socketFail={}, memFail={}, psuFail={}, cpuGpuBalanceFail={}, gamingMinFail={}, emptyMbForCpu={}, emptyMemForBoard={}, emptyStorage={}, emptyCase={}, emptyPsu={}, pairingRejected={}]",
+                    sessionId,
+                    profile.label,
+                    strictBudget,
+                    evaluated,
+                    tally.skippedStrictBudget,
+                    tally.socketFail,
+                    tally.memoryFail,
+                    tally.psuFail,
+                    tally.balanceFail,
+                    tally.gamingMinFail,
+                    tally.emptyMotherboardForCpu,
+                    tally.emptyMemoryForBoard,
+                    tally.emptyStorage,
+                    tally.emptyCase,
+                    tally.emptyPsuForPower,
+                    tally.cpuGpuPairingRejected
+            );
             return null;
         }
 
         return new VariantCandidate(best.label, best.parts, best.totals, best.score, best.tradeoffs, best.checks, evaluated);
     }
 
-        private BuildResponse.ChecksDto evaluateChecks(
+    private void tallyCompatibilityFailures(
+            BuildResponse.ChecksDto checks,
+            BuildResponse.RequirementsDto requirements,
+            Map<String, BuildResponse.PartDto> parts,
+            VariantSearchTally tally
+    ) {
+        if (!Boolean.TRUE.equals(checks.socketCompatible())) {
+            tally.socketFail++;
+            return;
+        }
+        if (!Boolean.TRUE.equals(checks.memoryCompatible())) {
+            tally.memoryFail++;
+            return;
+        }
+        if (!Boolean.TRUE.equals(checks.psuMinimumHeadroomPassed())) {
+            tally.psuFail++;
+            return;
+        }
+        if (!Boolean.TRUE.equals(checks.cpuGpuBalanceOk())) {
+            tally.balanceFail++;
+            return;
+        }
+        if (!meetsGamingMinimums(requirements, parts.get("gpu"), parts.get("memory"), parts.get("storage"))) {
+            tally.gamingMinFail++;
+        }
+    }
+
+    private static final class VariantSearchTally {
+        int skippedStrictBudget;
+        int socketFail;
+        int memoryFail;
+        int psuFail;
+        int balanceFail;
+        int gamingMinFail;
+        int emptyMotherboardForCpu;
+        int emptyMemoryForBoard;
+        int emptyStorage;
+        int emptyCase;
+        int emptyPsuForPower;
+        int cpuGpuPairingRejected;
+    }
+
+    private BuildResponse.ChecksDto evaluateChecks(
             Map<String, BuildResponse.PartDto> parts,
             BigDecimal budget,
             BuildResponse.RequirementsDto requirements,
-            boolean strictBudget
-        ) {
+            boolean strictBudget,
+            boolean relaxSodimmGate
+    ) {
         BuildResponse.PartDto cpu = parts.get("cpu");
         BuildResponse.PartDto gpu = parts.get("gpu");
         BuildResponse.PartDto motherboard = parts.get("motherboard");
@@ -522,7 +643,7 @@ public class FreshBuildRecommendationService {
         String expectedMemoryType = motherboard == null ? null : normalizeDdrLabel(motherboard.memoryType());
         String actualMemoryType = memory == null ? null : normalizeDdrLabel(memory.memoryType());
         boolean memoryCompatible = memory != null
-            && !isSodimm(memory)
+            && (relaxSodimmGate || !isSodimm(memory))
             && (expectedMemoryType == null
                 || (actualMemoryType != null && expectedMemoryType.equalsIgnoreCase(actualMemoryType)));
 
@@ -533,7 +654,12 @@ public class FreshBuildRecommendationService {
 
         BigDecimal total = totalPrice(parts);
         boolean budgetOk = total.compareTo(budget) <= 0;
-        boolean cpuGpuBalanceOk = cpuGpuPairingAllowed(tierOf(cpu), tierOf(gpu), requirements.useCase(), resolutionLabel(requirements.resolutionTarget()));
+        boolean cpuGpuBalanceOk = cpuGpuPairingAllowed(
+                tierOf(cpu),
+                tierOf(gpu),
+                requirements.useCase(),
+                resolutionLabel(requirements.resolutionTarget()),
+                requirements.workloadType());
         boolean gamingMinimumsOk = meetsGamingMinimums(requirements, gpu, memory, storage);
         boolean caseFitValidated = false;
         boolean stockValidationEnforced = false;
@@ -764,8 +890,24 @@ public class FreshBuildRecommendationService {
     }
 
     private boolean isSodimm(BuildResponse.PartDto memory) {
-        String name = memory == null || memory.name() == null ? "" : memory.name().toLowerCase(Locale.ROOT);
-        return name.contains("so-dimm") || name.contains("sodimm");
+        if (memory == null || memory.name() == null || memory.name().isBlank()) {
+            return false;
+        }
+        String name = memory.name().toLowerCase(Locale.ROOT);
+        // Desktop kits often advertise "no SO-DIMM" / "DIMM only" — those must not be classified as laptop RAM.
+        if (name.contains("no so-dimm")
+                || name.contains("no sodimm")
+                || name.contains("non-so-dimm")
+                || name.contains("non so-dimm")
+                || name.contains("без sodimm")
+                || name.contains("udimm")
+                || name.contains("dimm only")) {
+            return false;
+        }
+        if (name.contains("so-dimm")) {
+            return true;
+        }
+        return Pattern.compile("(?i)\\bsodimm\\b").matcher(name).find();
     }
 
     private double priceFitScore(BigDecimal price, BigDecimal target) {
@@ -861,12 +1003,18 @@ public class FreshBuildRecommendationService {
         return tokens;
     }
 
-    private boolean cpuGpuPairingAllowed(Tier cpuTier, Tier gpuTier, String useCase, String resolution) {
+    private boolean cpuGpuPairingAllowed(
+            Tier cpuTier,
+            Tier gpuTier,
+            String useCase,
+            String resolution,
+            WorkloadType workloadType
+    ) {
         if (cpuTier == null || gpuTier == null) {
             return false;
         }
         int delta = Math.abs(cpuTier.ordinal() - gpuTier.ordinal());
-        String normalizedUseCase = useCase == null ? "mixed" : useCase.toLowerCase(Locale.ROOT);
+        String normalizedUseCase = resolveUseCaseForPairing(useCase, workloadType);
         String normalizedResolution = resolution == null ? "1080p" : resolution.toLowerCase(Locale.ROOT);
 
         if ("gaming".equals(normalizedUseCase)) {
@@ -884,6 +1032,14 @@ public class FreshBuildRecommendationService {
         }
 
         return delta <= 3;
+    }
+
+    /** When workload is office-like, do not apply strict gaming CPU–GPU tier deltas if the LLM left useCase as gaming. */
+    private String resolveUseCaseForPairing(String useCase, WorkloadType workloadType) {
+        if (workloadType == WorkloadType.WORK) {
+            return "work";
+        }
+        return useCase == null ? "mixed" : useCase.toLowerCase(Locale.ROOT);
     }
 
     private int effectiveFallbackCount(List<BuildResponse.BuildVariantDto> top3) {
@@ -1376,38 +1532,41 @@ public class FreshBuildRecommendationService {
     private BuildResponse.RequirementsDto extractRequirements(String prompt, String currency, String region, Boolean strictBudget) {
         try {
             String preprocessedPrompt = preprocessPrompt(prompt);
-            if (!openAiEnabled || openAiProperties.apiKey() == null || openAiProperties.apiKey().isBlank()) {
+            if (!llmEnabled) {
                 return requirementsFromPrompt(preprocessedPrompt, strictBudget);
             }
 
-            String body = objectMapper.writeValueAsString(Map.of(
-                    "model", openAiProperties.model(),
-                    "messages", List.of(
-                            Map.of(
-                                    "role", "system",
-                                        "content", "Extract PC build requirements as strict JSON. Output JSON only with keys: budgetKzt,useCase,workloadType,resolutionTarget,refreshRateHz,priorities,constraints. constraints keys: brandCpu,brandGpu,rgb,caseSize,wifiRequired."
-                            ),
-                            Map.of(
-                                    "role", "user",
-                                    "content", "Prompt: " + preprocessedPrompt + "\\nCurrency: " + currency + "\\nRegion: " + region + "\\nStrictBudget: " + strictBudget
-                            )
+            Map<String, Object> bodyMap = new LinkedHashMap<>();
+            bodyMap.put("model", llmModel);
+            bodyMap.put("messages", List.of(
+                    Map.of(
+                            "role", "system",
+                            "content", "Extract PC build requirements as strict JSON. Output JSON only with keys: budgetKzt,useCase,workloadType,resolutionTarget,refreshRateHz,priorities,constraints. constraints keys: brandCpu,brandGpu,rgb,caseSize,wifiRequired."
                     ),
-                    "temperature", 0
+                    Map.of(
+                            "role", "user",
+                            "content", "Prompt: " + preprocessedPrompt + "\\nCurrency: " + currency + "\\nRegion: " + region + "\\nStrictBudget: " + strictBudget
+                    )
             ));
+            bodyMap.put("temperature", 0);
+            if (llmUrl != null && llmUrl.contains("11434")) {
+                bodyMap.put("think", false);
+            }
+            String body = objectMapper.writeValueAsString(bodyMap);
 
             String response = restClient.post()
-                    .uri(openAiProperties.url())
-                    .header("Authorization", "Bearer " + openAiProperties.apiKey())
-                    .header("Content-Type", "application/json")
+                    .uri(llmUrl)
+                    .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
                     .retrieve()
                     .body(String.class);
 
             JsonNode root = objectMapper.readTree(response);
             String content = root.path("choices").path(0).path("message").path("content").asText("{}");
-            JsonNode intentNode = objectMapper.readTree(sanitizeJson(content));
+            String jsonPayload = assistantContentToJsonPayload(content);
+            JsonNode intentNode = objectMapper.readTree(sanitizeJson(jsonPayload));
 
-                BigDecimal promptBudget = extractBudgetFromPrompt(preprocessedPrompt);
+            BigDecimal promptBudget = extractBudgetFromPrompt(preprocessedPrompt);
             BigDecimal aiBudget = extractAiBudgetKzt(intentNode, promptBudget);
 
             return new BuildResponse.RequirementsDto(
@@ -2479,7 +2638,15 @@ public class FreshBuildRecommendationService {
         if (normalizedPrompt == null || normalizedPrompt.isBlank()) {
             return "mixed";
         }
-
+        // Prefer office/work before gaming: prompts like "work PC, light gaming" contain both words.
+        if (normalizedPrompt.contains("office")
+                || Pattern.compile("(?i)\\bwork\\b").matcher(normalizedPrompt).find()
+                || normalizedPrompt.contains("workstation")
+                || normalizedPrompt.contains("coding")
+                || normalizedPrompt.contains("programming")
+                || (normalizedPrompt.contains("mainly") && Pattern.compile("(?i)\\bwork\\b").matcher(normalizedPrompt).find())) {
+            return "work";
+        }
         if (normalizedPrompt.contains("game")
                 || normalizedPrompt.contains("gaming")
                 || normalizedPrompt.contains("cyberpunk")
@@ -2488,13 +2655,6 @@ public class FreshBuildRecommendationService {
                 || normalizedPrompt.contains("pathtracing")
                 || normalizedPrompt.contains("ray tracing")) {
             return "gaming";
-        }
-
-        if (normalizedPrompt.contains("office")
-                || normalizedPrompt.contains("work")
-                || normalizedPrompt.contains("coding")
-                || normalizedPrompt.contains("programming")) {
-            return "work";
         }
 
         return "mixed";
@@ -2780,24 +2940,28 @@ public class FreshBuildRecommendationService {
         if (requirements == null || requirements.useCase() == null || !"gaming".equalsIgnoreCase(requirements.useCase())) {
             return true;
         }
+        if (requirements.workloadType() != null && requirements.workloadType() == WorkloadType.WORK) {
+            return true;
+        }
 
         int gpuVramGb = extractGpuVramGb(gpu == null ? null : gpu.name());
         int ramGb = extractMemoryCapacityGb(memory == null ? null : memory.name());
-        int storageGb = storage == null
-                ? 0
-                : Math.max(safeInt(storage.wattage(), 0), safeInt(extractStorageCapacity(storage.name()), 0));
+        Integer storageCap = storage == null ? null : extractStorageCapacity(storage.name());
+        int storageGb = storageCap == null ? 0 : storageCap;
         String memoryType = normalize(memory == null ? null : memory.memoryType());
 
         if (memoryType.contains("ddr3")) {
             return false;
         }
-        if (gpuVramGb > 0 && gpuVramGb < 8) {
+        // Listing titles often omit VRAM; only reject when a GB value was clearly parsed and is below a sane floor.
+        if (gpuVramGb > 0 && gpuVramGb < 6) {
             return false;
         }
         if (ramGb > 0 && ramGb < 16) {
             return false;
         }
-        return storageGb <= 0 || storageGb >= 500;
+        // Budget retail listings are full of 240–512 GB SSDs; requiring 500 GB rejected almost every branch.
+        return storageGb <= 0 || storageGb >= 240;
     }
 
     private int extractGpuVramGb(String text) {
@@ -2869,11 +3033,18 @@ public class FreshBuildRecommendationService {
         if (tb.find()) {
             return Integer.parseInt(tb.group(1)) * 1000;
         }
-        Matcher gb = Pattern.compile("(\\d{3,4})\\s*gb", Pattern.CASE_INSENSITIVE).matcher(text);
-        if (gb.find()) {
-            return Integer.parseInt(gb.group(1));
+        Matcher gb = Pattern.compile("(\\d{2,4})\\s*gb", Pattern.CASE_INSENSITIVE).matcher(text);
+        int best = 0;
+        while (gb.find()) {
+            try {
+                int value = Integer.parseInt(gb.group(1));
+                if (value > best && value < 10000) {
+                    best = value;
+                }
+            } catch (NumberFormatException ignored) {
+            }
         }
-        return null;
+        return best > 0 ? best : null;
     }
 
     private int safeInt(Integer value, int fallback) {
@@ -2892,6 +3063,41 @@ public class FreshBuildRecommendationService {
                     .trim();
         }
         return trimmed;
+    }
+
+    /**
+     * DeepSeek-R1 and similar models may emit reasoning blocks before JSON.
+     * Ollama returns OpenAI-shaped {@code choices[0].message.content}; this keeps parsing stable.
+     */
+    private String assistantContentToJsonPayload(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "{}";
+        }
+        String stripped = raw
+                .replaceAll("(?is)<think>.*?</think>", "")
+                .replaceAll("(?is)<reasoning>.*?</reasoning>", "");
+        stripped = extractFirstBalancedJsonObject(stripped);
+        return stripped == null || stripped.isBlank() ? "{}" : stripped;
+    }
+
+    private String extractFirstBalancedJsonObject(String text) {
+        int start = text.indexOf('{');
+        if (start < 0) {
+            return text.trim();
+        }
+        int depth = 0;
+        for (int i = start; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) {
+                    return text.substring(start, i + 1);
+                }
+            }
+        }
+        return text.substring(start);
     }
 
     private String textOrNull(JsonNode node) {

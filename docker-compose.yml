@@ -34,7 +34,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       PART_SERVICE_URL: http://part-service:8081
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Ollama on host; 127.0.0.1 inside the container is not the host — use host.docker.internal
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-r1:14b}
+      LLM_URL: ${LLM_URL:-http://host.docker.internal:11434/v1/chat/completions}
     depends_on:
       eureka-server:
         condition: service_started
